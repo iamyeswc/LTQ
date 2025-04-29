@@ -35,6 +35,9 @@ type LTQD struct {
 
 	exitChan chan int
 	poolSize int
+
+	//用系统锁给文件目录加锁
+	dl *DirLock
 }
 type errStore struct {
 	err error
@@ -45,18 +48,24 @@ type errStore struct {
 func New(opts *Options) (*LTQD, error) {
 	var err error
 	//设置选项
-	// dataPath := opts.DataPath
-	// if opts.DataPath == "" {
-	// 	cwd, _ := os.Getwd()
-	// 	dataPath = cwd
-	// }
+	dataPath := opts.DataPath
+	if opts.DataPath == "" {
+		cwd, _ := os.Getwd()
+		dataPath = cwd
+	}
 
 	//创建ltqd
 	l := &LTQD{
 		topics:   make(map[string]*Topic),
 		exitChan: make(chan int, 1),
+		dl:       NewDirLock(dataPath),
 	}
 	l.setOpts(opts)
+	//给文件目录加锁
+	err = l.dl.Lock()
+	if err != nil {
+		return nil, fmt.Errorf("failed to lock data-path: %v", err)
+	}
 
 	l.tcpServer = &tcpServer{ltqd: l}
 	l.tcpListener, err = net.Listen(TypeOfAddr(opts.TCPAddress), opts.TCPAddress)
@@ -357,9 +366,9 @@ func (l *LTQD) Exit() {
 	fmtLogf(Debug, "LTQ: stopping subsystems")
 	close(l.exitChan)
 	l.waitGroup.Wait()
-	// l.dl.Unlock()
+	//给文件目录解锁
+	l.dl.Unlock()
 	fmtLogf(Debug, "LTQ: bye")
-	// l.ctxCancel()
 }
 
 func (l *LTQD) PersistMetadata() error {
