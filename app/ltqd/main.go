@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"ltq/ltqd"
 	"os"
@@ -62,16 +61,8 @@ func (p *program) Stop() error {
 	return nil
 }
 
-func (p *program) Handle(s os.Signal) error {
-	return svc.ErrStop
-}
-
-// Context returns a context that will be canceled when ltqd initiates the shutdown
-func (p *program) Context() context.Context {
-	return p.ltqd.Context()
-}
-
 func logFatal(f string, args ...interface{}) {
-	fmt.Printf("[ltqd] ", f, args...)
-	fmt.Println() // 打印换行
+	fmt.Printf("[ltqd]: ")
+	fmt.Printf(f, args...)
+	fmt.Println()
 }

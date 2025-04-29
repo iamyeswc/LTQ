@@ -290,3 +290,52 @@ func (t *Topic) GenerateID() MessageID {
 		i++
 	}
 }
+
+func (t *Topic) Close() error {
+	return t.exit()
+}
+
+func (t *Topic) exit() error {
+	if !atomic.CompareAndSwapInt32(&t.exitFlag, 0, 1) {
+		return errors.New("exiting")
+	}
+
+	close(t.exitChan)
+
+	//等待messagepump完成
+	t.waitGroup.Wait()
+
+	// close all the channels
+	t.RLock()
+	for _, channel := range t.channels {
+		err := channel.Close()
+		if err != nil {
+			// we need to continue regardless of error to close all the channels
+			fmtLogf(Debug, "channel(%s) close - %s", channel.name, err)
+		}
+	}
+	t.RUnlock()
+
+	//把内存里的topic的消息持久化到磁盘
+	t.flush()
+	return t.backendMsgChan.Close()
+}
+
+func (t *Topic) flush() error {
+	if len(t.memoryMsgChan) > 0 {
+		fmtLogf(Debug, "TOPIC(%s): flushing %d memory messages to backend", t.name, len(t.memoryMsgChan))
+	}
+
+	for {
+		select {
+		case msg := <-t.memoryMsgChan:
+			err := writeMessageToBackend(msg, t.backendMsgChan)
+			if err != nil {
+				fmtLogf(Debug, "ERROR: failed to write message to backend - %s", err)
+			}
+		default:
+			return nil
+		}
+	}
+
+}

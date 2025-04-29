@@ -249,3 +249,58 @@ func (c *Channel) processInFlightQueue(t int64) bool {
 		c.put(msg)
 	}
 }
+
+func (c *Channel) Close() error {
+	return c.exit()
+}
+
+func (c *Channel) exit() error {
+	c.exitMutex.Lock()
+	defer c.exitMutex.Unlock()
+
+	if !atomic.CompareAndSwapInt32(&c.exitFlag, 0, 1) {
+		return errors.New("exiting")
+	}
+
+	fmtLogf(Debug, "CHANNEL(%s): closing", c.name)
+
+	c.RLock()
+	//关闭和channel连接的所有客户端
+	for _, client := range c.clients {
+		client.Close()
+	}
+	c.RUnlock()
+
+	//把channel里内存里的消息放到后端
+	c.flush()
+	return c.backendMsgChan.Close()
+}
+
+func (c *Channel) flush() error {
+	if len(c.memoryMsgChan) > 0 || len(c.inFlightMessages) > 0 {
+		fmtLogf(Debug, "CHANNEL(%s): flushing %d memory %d in-flightmessages to backend",
+			c.name, len(c.memoryMsgChan), len(c.inFlightMessages))
+	}
+
+	for {
+		select {
+		case msg := <-c.memoryMsgChan:
+			err := writeMessageToBackend(msg, c.backendMsgChan)
+			if err != nil {
+				fmtLogf(Debug, "failed to write message to backend - %s", err)
+			}
+		default:
+			c.inFlightMutex.Lock()
+			for _, msg := range c.inFlightMessages {
+				err := writeMessageToBackend(msg, c.backendMsgChan)
+				if err != nil {
+					fmtLogf(Debug, "failed to write message to backend - %s", err)
+				}
+			}
+			c.inFlightMutex.Unlock()
+
+			return nil
+		}
+	}
+
+}

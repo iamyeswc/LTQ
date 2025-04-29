@@ -1,8 +1,10 @@
 package ltqd
 
 import (
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"net"
 	"os"
 	"path"
@@ -17,6 +19,7 @@ type LTQD struct {
 	tcpListener  net.Listener
 	httpListener net.Listener
 	isLoading    int32 //加载的标志位
+	isExiting    int32 //退出的标志位
 
 	sync.RWMutex
 
@@ -323,13 +326,104 @@ func (l *LTQD) LoadMetadata() error {
 	return nil
 }
 
+func (l *LTQD) Exit() {
+	if !atomic.CompareAndSwapInt32(&l.isExiting, 0, 1) {
+		// avoid double call
+		return
+	}
+	if l.tcpListener != nil {
+		l.tcpListener.Close()
+	}
+
+	if l.tcpServer != nil {
+		l.tcpServer.Close()
+	}
+
+	if l.httpListener != nil {
+		l.httpListener.Close()
+	}
+
+	l.Lock()
+	err := l.PersistMetadata()
+	if err != nil {
+		fmtLogf(Debug, "failed to persist metadata - %s", err)
+	}
+	fmtLogf(Debug, "LTQ: closing topics")
+	for _, topic := range l.topics {
+		topic.Close()
+	}
+	l.Unlock()
+
+	fmtLogf(Debug, "LTQ: stopping subsystems")
+	close(l.exitChan)
+	l.waitGroup.Wait()
+	// l.dl.Unlock()
+	fmtLogf(Debug, "LTQ: bye")
+	// l.ctxCancel()
+}
+
+func (l *LTQD) PersistMetadata() error {
+	// persist metadata about what topics/channels we have, across restarts
+	fileName := newMetadataFile(l.getOpts())
+
+	fmtLogf(Debug, "LTQ: persisting topic/channel metadata to %s", fileName)
+
+	data, err := json.Marshal(l.GetMetadata())
+	if err != nil {
+		return err
+	}
+	maxInt := big.NewInt(1<<31 - 1)
+	n, err := rand.Int(rand.Reader, maxInt)
+	if err != nil {
+		return fmt.Errorf("failed to generate random number: %v", err)
+	}
+	tmpFileName := fmt.Sprintf("%s.%d.tmp", fileName, n.Int64())
+	err = writeSyncFile(tmpFileName, data)
+	if err != nil {
+		return err
+	}
+	err = os.Rename(tmpFileName, fileName)
+	if err != nil {
+		return err
+	}
+	// technically should fsync DataPath here
+
+	return nil
+}
+
+func (l *LTQD) GetMetadata() *Metadata {
+	meta := &Metadata{}
+	for _, topic := range l.topics {
+		topicData := TopicMetadata{
+			Name: topic.name,
+		}
+		topic.Lock()
+		for _, channel := range topic.channels {
+			topicData.Channels = append(topicData.Channels, ChannelMetadata{
+				Name: channel.name,
+			})
+		}
+		topic.Unlock()
+		meta.Topics = append(meta.Topics, topicData)
+	}
+	return meta
+}
+
 type Metadata struct {
-	Topics  []TopicMetadata `json:"topics"`
-	Version string          `json:"version"`
+	Topics []TopicMetadata `json:"topics"`
+}
+
+type TopicMetadata struct {
+	Name     string            `json:"name"`
+	Channels []ChannelMetadata `json:"channels"`
+}
+
+type ChannelMetadata struct {
+	Name string `json:"name"`
 }
 
 func newMetadataFile(opts *Options) string {
-	return path.Join(opts.DataPath, "nsqd.dat")
+	return path.Join(opts.DataPath, "ltqd.dat")
 }
 
 func readOrEmpty(fn string) ([]byte, error) {
@@ -340,4 +434,18 @@ func readOrEmpty(fn string) ([]byte, error) {
 		}
 	}
 	return data, nil
+}
+
+func writeSyncFile(fn string, data []byte) error {
+	f, err := os.OpenFile(fn, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	if err != nil {
+		return err
+	}
+
+	_, err = f.Write(data)
+	if err == nil {
+		err = f.Sync()
+	}
+	f.Close()
+	return err
 }
