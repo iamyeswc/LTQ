@@ -49,9 +49,9 @@ func NewChannel(name, topicName string, ltqd *LTQD) *Channel {
 	dqLogf := func(level diskqueue.LogLevel, f string, args ...interface{}) {
 		fmtLogf(Debug, f, args...)
 	}
-
+	backendName := getBackendName(topicName, name)
 	c.backendMsgChan = diskqueue.New(
-		name,
+		backendName,
 		ltqd.getOpts().DataPath,
 		ltqd.getOpts().MaxBytesPerFile,
 		int32(minValidMsgLength),
@@ -238,17 +238,14 @@ func (c *Channel) processInFlightQueue(t int64) bool {
 		c.inFlightMutex.Unlock()
 
 		if msg == nil {
-			goto exit
+			return dirty
 		}
 		dirty = true
 
 		_, err := c.popInFlightMessage(msg.clientID, msg.ID)
 		if err != nil {
-			goto exit
+			return dirty
 		}
 		c.put(msg)
 	}
-
-exit:
-	return dirty
 }
