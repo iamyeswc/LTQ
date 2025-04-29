@@ -65,4 +65,5 @@ func logFatal(f string, args ...interface{}) {
 	fmt.Printf("[ltqd]: ")
 	fmt.Printf(f, args...)
 	fmt.Println()
+	os.Exit(1)
 }

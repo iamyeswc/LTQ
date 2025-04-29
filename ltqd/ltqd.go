@@ -319,7 +319,7 @@ func (l *LTQD) LoadMetadata() error {
 				fmtLogf(Debug, "skipping creation of invalid channel %s", c.Name)
 				continue
 			}
-			// channel := topic.GetChannel(c.Name)
+			topic.GetChannel(c.Name)
 		}
 		topic.Start()
 	}
