@@ -23,7 +23,11 @@ type Options struct {
 	SyncTimeout     time.Duration `flag:"sync-timeout"`
 
 	// msg and command options
-	MaxMsgSize int64 `flag:"max-msg-size"`
+	MaxMsgSize int64         `flag:"max-msg-size"`
+	MsgTimeout time.Duration `flag:"msg-timeout"`
+
+	MaxRdyCount   int64         `flag:"max-rdy-count"`
+	MaxReqTimeout time.Duration `flag:"max-req-timeout"`
 }
 
 func NewOptions() *Options {
@@ -48,5 +52,9 @@ func NewOptions() *Options {
 		SyncTimeout:     2 * time.Second,
 
 		MaxMsgSize: 1024 * 1024,
+		MsgTimeout: 5 * time.Second,
+
+		MaxRdyCount:   10000,
+		MaxReqTimeout: 5 * time.Second,
 	}
 }

@@ -18,6 +18,9 @@ type LTQD struct {
 
 	//加载配置
 	opts atomic.Value
+
+	//当前ltqd的机器序列号
+	clientIDSequence int64
 }
 type errStore struct {
 	err error

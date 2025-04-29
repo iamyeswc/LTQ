@@ -12,14 +12,25 @@ const (
 	minValidMsgLength = MsgIDLength + 8 + 2 // Timestamp + Attempts
 )
 
+type MessageID [MsgIDLength]byte
+
 type Message struct {
 	Timestamp int64
 	Attempts  uint16
 	Body      []byte
-	ID        [MsgIDLength]byte
+	ID        MessageID
+
+	//发送消息的客户端id
+	clientID int64
+	//消息投递时间戳
+	deliveryTS time.Time
+	//把消息投递时间戳+timeout时间作为过期时间
+	pri int64
+
+	index int // 用于最小堆的索引
 }
 
-func NewMessage(id [MsgIDLength]byte, body []byte) *Message {
+func NewMessage(id MessageID, body []byte) *Message {
 	timestamp := time.Now().UnixNano()
 	return &Message{
 		Timestamp: timestamp,
@@ -66,6 +77,29 @@ func writeMessageToBackend(msg *Message, bq BackendQueue) error {
 }
 
 func (m *Message) WriteTo(w io.Writer) (int64, error) {
-	//placehoder
-	return int64(0), nil
+	var buf [10]byte
+	var total int64
+
+	binary.BigEndian.PutUint64(buf[:8], uint64(m.Timestamp))
+	binary.BigEndian.PutUint16(buf[8:10], uint16(m.Attempts))
+
+	n, err := w.Write(buf[:])
+	total += int64(n)
+	if err != nil {
+		return total, err
+	}
+
+	n, err = w.Write(m.ID[:])
+	total += int64(n)
+	if err != nil {
+		return total, err
+	}
+
+	n, err = w.Write(m.Body)
+	total += int64(n)
+	if err != nil {
+		return total, err
+	}
+
+	return total, nil
 }

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/nsqio/go-diskqueue"
 )
@@ -15,8 +16,9 @@ type Topic struct {
 	backendMsgChan BackendQueue
 	channels       map[string]*Channel
 
-	startChan chan int //开始messagePump的标志
-	exitChan  chan int //结束messagePump的标志
+	startChan         chan int //开始messagePump的标志
+	exitChan          chan int //结束messagePump的标志
+	channelUpdateChan chan int
 	sync.RWMutex
 
 	exitFlag int32 //退出标志位
@@ -26,6 +28,8 @@ type Topic struct {
 	messageBytes uint64 //消息体大小
 
 	waitGroup WaitGroupWrapper
+
+	idFactory *guidFactory
 }
 
 // constructor of Topic
@@ -34,10 +38,13 @@ type Topic struct {
 // - 通知ltqd 触发新topic建立时 ltqd需要做的工作(metadata持久化到磁盘、通知lookup注册了新的topic)
 func NewTopic(name string, ltqd *LTQD) *Topic {
 	t := &Topic{
-		name:          name,
-		ltqd:          ltqd,
-		memoryMsgChan: make(chan *Message, ltqd.getOpts().MemQueueSize),
-		channels:      make(map[string]*Channel),
+		name:              name,
+		ltqd:              ltqd,
+		memoryMsgChan:     make(chan *Message, ltqd.getOpts().MemQueueSize),
+		startChan:         make(chan int),
+		exitChan:          make(chan int),
+		channelUpdateChan: make(chan int),
+		channels:          make(map[string]*Channel),
 	}
 
 	dqLogf := func(level diskqueue.LogLevel, f string, args ...interface{}) {
@@ -73,31 +80,57 @@ func (t *Topic) Start() {
 // Exiting
 // - 判断当前topic是否退出
 // - 原子操作避免数据竞争 防止数据不一致和错误
-func Exiting() {
-
+// 用于客户端与ltqd连接的时候，如果需要有客户端订阅正在退出的topic，需要把这个客户端移除
+func (t *Topic) Exiting() bool {
+	return atomic.LoadInt32(&t.exitFlag) == 1
 }
 
 // GetChannel
 // - 从当前topic中取某个channel 如果channel不存在需要创建
 // - 通过channelUpdateChan，在新创建channel时与messagePump做消息传递 messagePump需要重新获取所有的channel
 // - 加锁保证GetChannel操作的线程安全 防止并发产生错误
-func GetChannel() {
+// 用于客户端与ltqd连接的时候，如果需要有客户端订阅对应topic下的channel，拿到对应的channel，把客户端加进去
+func (t *Topic) GetChannel(name string) *Channel {
+	t.Lock()
+	channel, isNew := t.getOrCreateChannel(name)
+	t.Unlock()
 
+	if isNew {
+		//新创建的channel, 需要通知topic的messagepumb更新所有list的channel
+		select {
+		case t.channelUpdateChan <- 1:
+		case <-t.exitChan:
+		}
+	}
+
+	return channel
 }
 
-// GetExistingChannel
-// - 保证channel存在的前提下 获取channel的方法
-// - 相比于GetChannel不存在create channel的行为 通过sync.RWMutex提高并发性能和效率
-func GetExistingChannel() {
-
+func (t *Topic) getOrCreateChannel(name string) (*Channel, bool) {
+	channel, ok := t.channels[name]
+	if !ok {
+		//找不到channel就创建一个
+		channel = NewChannel(t.name, name, t.ltqd)
+		t.channels[name] = channel
+		fmtLogf(Debug, "TOPIC(%s): new channel(%s)", t.name, channel.name)
+		return channel, true
+	}
+	return channel, false
 }
 
-// DeleteExistingChannel
-// - 保证channel存在的前提下 从当前topic下删除channel
-// - 通过channelUpdateChan，在删除channel时与messagePump做消息传递 messagePump需要重新获取所有的channel
-func DeleteExistingChannel() {
+// // GetExistingChannel
+// // - 保证channel存在的前提下 获取channel的方法
+// // - 相比于GetChannel不存在create channel的行为 通过sync.RWMutex提高并发性能和效率
+// func GetExistingChannel() {
 
-}
+// }
+
+// // DeleteExistingChannel
+// // - 保证channel存在的前提下 从当前topic下删除channel
+// // - 通过channelUpdateChan，在删除channel时与messagePump做消息传递 messagePump需要重新获取所有的channel
+// func DeleteExistingChannel() {
+
+// }
 
 // messagePump
 // - 当前topic的消息处理函数
@@ -112,6 +145,8 @@ func (t *Topic) messagePump() {
 
 	for {
 		select {
+		case <-t.channelUpdateChan: //这时候更新channel 不用进入主循环
+			continue
 		case <-t.exitChan:
 			fmtLogf(Debug, "TOPIC(%s): closing ... messagePump", t.name)
 			return
@@ -142,6 +177,22 @@ func (t *Topic) messagePump() {
 				fmtLogf(Debug, "TOPIC(%s): failed to decode message - %s", t.name, err)
 				continue
 			}
+		case <-t.channelUpdateChan:
+			//移除之前所有的chans，更新到最新
+			chans = chans[:0]
+			t.RLock()
+			for _, c := range t.channels {
+				chans = append(chans, c)
+			}
+			t.RUnlock()
+			if len(chans) == 0 {
+				memoryMsgChan = nil
+				backendMsgChan = nil
+			} else {
+				memoryMsgChan = t.memoryMsgChan
+				backendMsgChan = t.backendMsgChan.ReadChan()
+			}
+			continue
 		case <-t.exitChan:
 			fmtLogf(Debug, "TOPIC(%s): closing ... messagePump", t.name)
 			return
@@ -162,7 +213,24 @@ func (t *Topic) messagePump() {
 	}
 }
 
+func (t *Topic) PutMessage(m *Message) error {
+	//放一个消息
+	t.RLock()
+	defer t.RUnlock()
+	if atomic.LoadInt32(&t.exitFlag) == 1 {
+		return errors.New("exiting")
+	}
+	err := t.put(m)
+	if err != nil {
+		return err
+	}
+	atomic.AddUint64(&t.messageCount, 1)
+	atomic.AddUint64(&t.messageBytes, uint64(len(m.Body)))
+	return nil
+}
+
 func (t *Topic) PutMessages(msgs []*Message) error {
+	//放多个消息
 	t.RLock()
 	defer t.RUnlock()
 	if atomic.LoadInt32(&t.exitFlag) == 1 {
@@ -205,4 +273,20 @@ func (t *Topic) put(m *Message) error {
 		return err
 	}
 	return nil
+}
+
+func (t *Topic) GenerateID() MessageID {
+	//雪花算法生成一个唯一的ID
+	var i int64 = 0
+	for {
+		id, err := t.idFactory.NewGUID()
+		if err == nil {
+			return id.Hex()
+		}
+		if i%10000 == 0 {
+			fmtLogf(Debug, "TOPIC(%s): failed to create guid - %s", t.name, err)
+		}
+		time.Sleep(time.Millisecond)
+		i++
+	}
 }
