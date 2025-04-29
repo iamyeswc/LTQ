@@ -28,6 +28,12 @@ type Options struct {
 
 	MaxRdyCount   int64         `flag:"max-rdy-count"`
 	MaxReqTimeout time.Duration `flag:"max-req-timeout"`
+
+	QueueScanSelectionCount  int           `flag:"queue-scan-selection-count"`
+	QueueScanInterval        time.Duration `flag:"queue-scan-interval"`
+	QueueScanRefreshInterval time.Duration `flag:"queue-scan-refresh-interval"`
+	QueueScanDirtyPercent    float64       `flag:"queue-scan-dirty-percent"`
+	QueueScanWorkerPoolMax   int           `flag:"queue-scan-worker-pool-max"`
 }
 
 func NewOptions() *Options {
@@ -56,5 +62,11 @@ func NewOptions() *Options {
 
 		MaxRdyCount:   10000,
 		MaxReqTimeout: 5 * time.Second,
+
+		QueueScanSelectionCount:  100,
+		QueueScanInterval:        1 * time.Second,
+		QueueScanRefreshInterval: 5 * time.Second,
+		QueueScanDirtyPercent:    0.25,
+		QueueScanWorkerPoolMax:   10,
 	}
 }

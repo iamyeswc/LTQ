@@ -28,6 +28,10 @@ func newHTTPServer(ltqd *LTQD) *httpServer {
 	return s
 }
 
+func (s *httpServer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	s.router.ServeHTTP(w, req)
+}
+
 func (s *httpServer) doPUB(w http.ResponseWriter, req *http.Request, ps httprouter.Params) (interface{}, error) {
 
 	if req.ContentLength > s.ltqd.getOpts().MaxMsgSize {

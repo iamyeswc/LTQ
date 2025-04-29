@@ -222,3 +222,33 @@ func (c *Channel) removeFromInFlightPQ(msg *Message) {
 	c.inFlightPQ.Remove(msg.index)
 	c.inFlightMutex.Unlock()
 }
+
+func (c *Channel) processInFlightQueue(t int64) bool {
+	c.exitMutex.RLock()
+	defer c.exitMutex.RUnlock()
+
+	if c.Exiting() {
+		return false
+	}
+
+	dirty := false
+	for {
+		c.inFlightMutex.Lock()
+		msg, _ := c.inFlightPQ.PeekAndShift(t)
+		c.inFlightMutex.Unlock()
+
+		if msg == nil {
+			goto exit
+		}
+		dirty = true
+
+		_, err := c.popInFlightMessage(msg.clientID, msg.ID)
+		if err != nil {
+			goto exit
+		}
+		c.put(msg)
+	}
+
+exit:
+	return dirty
+}

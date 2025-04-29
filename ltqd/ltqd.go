@@ -1,13 +1,18 @@
 package ltqd
 
 import (
+	"crypto/rand"
+	"fmt"
+	"math/big"
 	"net"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 type LTQD struct {
 	topics       map[string]*Topic
+	tcpServer    *tcpServer
 	tcpListener  net.Listener
 	httpListener net.Listener
 	isLoading    int32 //加载的标志位
@@ -21,6 +26,11 @@ type LTQD struct {
 
 	//当前ltqd的机器序列号
 	clientIDSequence int64
+
+	waitGroup WaitGroupWrapper
+
+	exitChan chan int
+	poolSize int
 }
 type errStore struct {
 	err error
@@ -29,6 +39,7 @@ type errStore struct {
 // constructor of LTQD
 // - 初始化channel中的各个成员变量
 func New(opts *Options) (*LTQD, error) {
+	var err error
 	//设置选项
 	// dataPath := opts.DataPath
 	// if opts.DataPath == "" {
@@ -38,9 +49,23 @@ func New(opts *Options) (*LTQD, error) {
 
 	//创建ltqd
 	l := &LTQD{
-		topics: make(map[string]*Topic),
+		topics:   make(map[string]*Topic),
+		exitChan: make(chan int, 1),
 	}
 	l.setOpts(opts)
+
+	l.tcpServer = &tcpServer{ltqd: l}
+	l.tcpListener, err = net.Listen(TypeOfAddr(opts.TCPAddress), opts.TCPAddress)
+	if err != nil {
+		return nil, fmt.Errorf("listen (%s) failed - %s", opts.TCPAddress, err)
+	}
+
+	if opts.HTTPAddress != "" {
+		l.httpListener, err = net.Listen(TypeOfAddr(opts.HTTPAddress), opts.HTTPAddress)
+		if err != nil {
+			return nil, fmt.Errorf("listen (%s) failed - %s", opts.HTTPAddress, err)
+		}
+	}
 
 	return l, nil
 }
@@ -108,21 +133,116 @@ func (l *LTQD) setOpts(opts *Options) {
 // - 启动HTTP server协程 开始接受并处理来自client的HTTP连接
 // - 启动queueScanLoop协程 处理in-flight queue和defered queue中的message
 // - 启动lookupLoop协程 与lookup节点交互
-func Main() {
+func (l *LTQD) Main() error {
+	exitCh := make(chan error)
+	var once sync.Once
+	exitFunc := func(err error) {
+		once.Do(func() {
+			if err != nil {
+				fmtLogf(Debug, "%v", err)
+			}
+			exitCh <- err
+		})
+	}
 
+	l.waitGroup.Wrap(func() {
+		exitFunc(TCPServer(l.tcpListener, l.tcpServer))
+	})
+	if l.httpListener != nil {
+		httpServer := newHTTPServer(l)
+		l.waitGroup.Wrap(func() {
+			exitFunc(Serve(l.httpListener, httpServer, "HTTP"))
+		})
+	}
+
+	l.waitGroup.Wrap(l.queueScanLoop)
+	// l.waitGroup.Wrap(l.lookupLoop)
+
+	err := <-exitCh
+	return err
 }
 
 // queueScanLoop
 // - 通过多个queueScanWorker 并发处理扫描处理各个channel
 // - 通过概率过期算法 优化scan的策略
-func queueScanLoop() {
+func (l *LTQD) queueScanLoop() {
+	workCh := make(chan *Channel, l.getOpts().QueueScanSelectionCount)
+	responseCh := make(chan bool, l.getOpts().QueueScanSelectionCount)
+	closeCh := make(chan int)
+
+	workTicker := time.NewTicker(l.getOpts().QueueScanInterval)
+	refreshTicker := time.NewTicker(l.getOpts().QueueScanRefreshInterval)
+
+	channels := l.channels()
+	l.resizePool(len(channels), workCh, responseCh, closeCh)
+
+	for {
+		select {
+		case <-workTicker.C:
+			if len(channels) == 0 {
+				continue
+			}
+		case <-refreshTicker.C:
+			channels = l.channels()
+			l.resizePool(len(channels), workCh, responseCh, closeCh)
+			continue
+		case <-l.exitChan:
+			fmtLogf(Debug, "QUEUESCAN: closing")
+			close(closeCh)
+			workTicker.Stop()
+			refreshTicker.Stop()
+			return
+		}
+
+		num := l.getOpts().QueueScanSelectionCount
+		if num > len(channels) {
+			num = len(channels)
+		}
+
+		for {
+			for _, i := range UniqRands(num, len(channels)) {
+				workCh <- channels[i]
+			}
+
+			numDirty := 0
+			for i := 0; i < num; i++ {
+				if <-responseCh {
+					numDirty++
+				}
+			}
+
+			if float64(numDirty)/float64(num) <= l.getOpts().QueueScanDirtyPercent {
+				break
+			}
+		}
+	}
 
 }
 
 // resizePool
 // 根据channel数量动态调整queueScanWorker的数量 对worker数量进行增减
-func resizePool() {
-
+func (l *LTQD) resizePool(num int, workCh chan *Channel, responseCh chan bool, closeCh chan int) {
+	idealPoolSize := int(float64(num) * 0.25)
+	if idealPoolSize < 1 {
+		idealPoolSize = 1
+	} else if idealPoolSize > l.getOpts().QueueScanWorkerPoolMax {
+		idealPoolSize = l.getOpts().QueueScanWorkerPoolMax
+	}
+	for {
+		if idealPoolSize == l.poolSize {
+			break
+		} else if idealPoolSize < l.poolSize {
+			// contract
+			closeCh <- 1
+			l.poolSize--
+		} else {
+			// expand
+			l.waitGroup.Wrap(func() {
+				l.queueScanWorker(workCh, responseCh, closeCh)
+			})
+			l.poolSize++
+		}
+	}
 }
 
 // lookupLoop
@@ -131,4 +251,66 @@ func resizePool() {
 // 通过optsNotificationChan接收opts变更的消息 更新lookup节点的地址
 func lookupLoop() {
 
+}
+
+func (l *LTQD) queueScanWorker(workCh chan *Channel, responseCh chan bool, closeCh chan int) {
+	for {
+		select {
+		case c := <-workCh:
+			now := time.Now().UnixNano()
+			dirty := false
+			if c.processInFlightQueue(now) {
+				dirty = true
+			}
+			responseCh <- dirty
+		case <-closeCh:
+			return
+		}
+	}
+}
+
+// 获取当前实例下面的所有topics的channel
+func (l *LTQD) channels() []*Channel {
+	var channels []*Channel
+	l.RLock()
+	for _, t := range l.topics {
+		t.RLock()
+		for _, c := range t.channels {
+			channels = append(channels, c)
+		}
+		t.RUnlock()
+	}
+	l.RUnlock()
+	return channels
+}
+
+func UniqRands(quantity int, maxval int) []int {
+	if maxval < quantity {
+		quantity = maxval
+	}
+
+	intSlice := make([]int, maxval)
+	for i := 0; i < maxval; i++ {
+		intSlice[i] = i
+	}
+
+	for i := 0; i < quantity; i++ {
+		randInt, err := rand.Int(rand.Reader, big.NewInt(int64(maxval)))
+		if err != nil {
+			panic(fmt.Sprintf("failed to generate random number: %v", err))
+		}
+		j := int(randInt.Int64()) + i
+		// swap
+		intSlice[i], intSlice[j] = intSlice[j], intSlice[i]
+		maxval--
+
+	}
+	return intSlice[0:quantity]
+}
+
+func TypeOfAddr(addr string) string {
+	if _, _, err := net.SplitHostPort(addr); err == nil {
+		return "tcp"
+	}
+	return "unix"
 }
