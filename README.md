@@ -25,18 +25,17 @@ A lightweight, high-concurrency message middleware.
 
 ## 消息模型
 
-- P —message— > C  一个生产者对一个消费者，1：1， 消息有序
+- 一个生产者对一个消费者
 
-- P  ——— > topic   ——— > C
+   1：1， 消息有序
 
-   生产者将消息送到topic, 订阅了的消费者拿到消息，多：1
+- 多个生产者将消息送到topic, 订阅了topic的消费者拿到消息
 
-- ​                              —message— > C
-   P —message— > —message— > C
+   多：1
 
-   ​                               —message— > C
+-  生产者将消息送到topic, topic下有多个channel, 订阅了channel的消费者拿到消息
 
-   生产者将消息送到topic, 订阅了的消费者拿到消息，多：多
+   多：多
 
 ---
 
