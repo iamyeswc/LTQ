@@ -2,9 +2,10 @@ package ltqd
 
 import (
 	"errors"
-	"fmt"
 	"sync"
 	"sync/atomic"
+
+	"github.com/nsqio/go-diskqueue"
 )
 
 type Topic struct {
@@ -22,9 +23,9 @@ type Topic struct {
 
 	//根据当前topic下所有消息大小决定是否要放到后端
 	messageCount uint64 //消息数量
-	mesageBytes  uint64 //消息体大小
+	messageBytes uint64 //消息体大小
 
-	waitGroup waitGroupWrapper
+	waitGroup WaitGroupWrapper
 }
 
 // constructor of Topic
@@ -40,7 +41,7 @@ func NewTopic(name string, ltqd *LTQD) *Topic {
 	}
 
 	dqLogf := func(level diskqueue.LogLevel, f string, args ...interface{}) {
-		fmtLogf("DEBUG", f, args...)
+		fmtLogf(Debug, f, args...)
 	}
 
 	t.backendMsgChan = diskqueue.New(
@@ -54,7 +55,7 @@ func NewTopic(name string, ltqd *LTQD) *Topic {
 		dqLogf,
 	)
 
-	waitGroup.Wrap(t.messagePump)
+	t.waitGroup.Wrap(t.messagePump)
 
 	return t
 }
@@ -98,35 +99,6 @@ func DeleteExistingChannel() {
 
 }
 
-// Exiting
-// - 判断当前topic是否退出
-// - 原子操作避免数据竞争 防止数据不一致和错误
-func Exiting() {
-
-}
-
-// GetChannel
-// - 从当前topic中取某个channel 如果channel不存在需要创建
-// - 通过channelUpdateChan，在新创建channel时与messagePump做消息传递 messagePump需要重新获取所有的channel
-// - 加锁保证GetChannel操作的线程安全 防止并发产生错误
-func GetChannel() {
-
-}
-
-// GetExistingChannel
-// - 保证channel存在的前提下 获取channel的方法
-// - 相比于GetChannel不存在create channel的行为 通过sync.RWMutex提高并发性能和效率
-func GetExistingChannel() {
-
-}
-
-// DeleteExistingChannel
-// - 保证channel存在的前提下 从当前topic下删除channel
-// - 通过channelUpdateChan，在删除channel时与messagePump做消息传递 messagePump需要重新获取所有的channel
-func DeleteExistingChannel() {
-
-}
-
 // messagePump
 // - 当前topic的消息处理函数
 // - 不断select接收来自in-memory queue和backend queue的消息 并复制到当前topic的每个channel
@@ -136,12 +108,12 @@ func (t *Topic) messagePump() {
 	var err error
 	var chans []*Channel
 	var memoryMsgChan chan *Message
-	var backendMsgChan chan *Message
+	var backendMsgChan <-chan []byte
 
 	for {
 		select {
 		case <-t.exitChan:
-			fmt.Println("TOPIC(%s): closing ... messagePump", t.name)
+			fmtLogf(Debug, "TOPIC(%s): closing ... messagePump", t.name)
 			return
 		case <-t.startChan:
 		}
@@ -157,21 +129,21 @@ func (t *Topic) messagePump() {
 
 	if len(chans) > 0 {
 		memoryMsgChan = t.memoryMsgChan
-		backendMsgChan = t.backendMsgChan
+		backendMsgChan = t.backendMsgChan.ReadChan()
 	}
 
 	//主循环
 	for {
 		select {
 		case msg = <-memoryMsgChan:
-		case buf = <-backendChan:
+		case buf = <-backendMsgChan:
 			msg, err = decodeMessage(buf)
 			if err != nil {
-				fmt.Println("TOPIC(%s): failed to decode message - %s", t.name, err)
+				fmtLogf(Debug, "TOPIC(%s): failed to decode message - %s", t.name, err)
 				continue
 			}
 		case <-t.exitChan:
-			fmt.Println("TOPIC(%s): closing ... messagePump", t.name)
+			fmtLogf(Debug, "TOPIC(%s): closing ... messagePump", t.name)
 			return
 		}
 
@@ -184,7 +156,7 @@ func (t *Topic) messagePump() {
 			}
 			err := channel.PutMessage(chanMsg)
 			if err != nil {
-				fmt.Println("TOPIC(%s): failed to put msg(%s) to channel(%s) - %s", t.name, msg.ID, channel.name, err)
+				fmtLogf(Debug, "TOPIC(%s): failed to put msg(%s) to channel(%s) - %s", t.name, msg.ID, channel.name, err)
 			}
 		}
 	}
@@ -226,10 +198,10 @@ func (t *Topic) put(m *Message) error {
 	}
 
 	//如果内存满了，放到后端
-	err := writeMessageToBackend(m, t.backend)
+	err := writeMessageToBackend(m, t.backendMsgChan)
 	t.ltqd.SetHealth(err)
 	if err != nil {
-		fmt.Println("TOPIC(%s) ERROR: failed to write message to backend - %s", t.name, err)
+		fmtLogf(Debug, "TOPIC(%s) ERROR: failed to write message to backend - %s", t.name, err)
 		return err
 	}
 	return nil

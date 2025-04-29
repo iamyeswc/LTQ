@@ -3,6 +3,7 @@ package ltqd
 import (
 	"encoding/binary"
 	"fmt"
+	"io"
 	"time"
 )
 
@@ -18,7 +19,7 @@ type Message struct {
 	ID        [MsgIDLength]byte
 }
 
-func (m *Message) NewMessage(id [MsgIDLength]byte, body []byte) *Message {
+func NewMessage(id [MsgIDLength]byte, body []byte) *Message {
 	timestamp := time.Now().UnixNano()
 	return &Message{
 		Timestamp: timestamp,
@@ -62,4 +63,9 @@ func writeMessageToBackend(msg *Message, bq BackendQueue) error {
 		return err
 	}
 	return bq.Put(buf.Bytes())
+}
+
+func (m *Message) WriteTo(w io.Writer) (int64, error) {
+	//placehoder
+	return int64(0), nil
 }

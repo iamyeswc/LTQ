@@ -2,9 +2,10 @@ package ltqd
 
 import (
 	"errors"
-	"fmt"
 	"sync"
 	"sync/atomic"
+
+	"github.com/nsqio/go-diskqueue"
 )
 
 type Channel struct {
@@ -15,6 +16,8 @@ type Channel struct {
 
 	exitMutex sync.RWMutex
 	exitFlag  int32
+
+	messageCount uint64 //消息数量
 }
 
 // constructor of Channel
@@ -28,7 +31,7 @@ func NewChannel(name string, ltqd *LTQD) *Channel {
 	}
 
 	dqLogf := func(level diskqueue.LogLevel, f string, args ...interface{}) {
-		fmtLogf("DEBUG", f, args...)
+		fmtLogf(Debug, f, args...)
 	}
 
 	c.backendMsgChan = diskqueue.New(
@@ -48,8 +51,8 @@ func NewChannel(name string, ltqd *LTQD) *Channel {
 // Exiting
 // - 判断当前channel是否退出
 // - 原子操作避免数据竞争 防止数据不一致和错误
-func (c *Channel) Exiting() {
-
+func (c *Channel) Exiting() bool {
+	return atomic.LoadInt32(&c.exitFlag) == 1
 }
 
 func (c *Channel) PutMessage(m *Message) error {
@@ -66,10 +69,6 @@ func (c *Channel) PutMessage(m *Message) error {
 	return nil
 }
 
-func (c *Channel) Exiting() bool {
-	return atomic.LoadInt32(&c.exitFlag) == 1
-}
-
 func (c *Channel) put(m *Message) error {
 	//把消息放到内存
 	if cap(c.memoryMsgChan) > 0 {
@@ -82,10 +81,10 @@ func (c *Channel) put(m *Message) error {
 	}
 
 	//如果内存满了，放到后端
-	err := writeMessageToBackend(m, c.backend)
+	err := writeMessageToBackend(m, c.backendMsgChan)
 	c.ltqd.SetHealth(err)
 	if err != nil {
-		fmt.Println("CHANNEL(%s): put message to backend - %s", c.name, err)
+		fmtLogf(Debug, "CHANNEL(%s): put message to backend - %s", c.name, err)
 		return err
 	}
 	return nil

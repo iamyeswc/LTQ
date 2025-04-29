@@ -1,6 +1,10 @@
 package ltqd
 
-import "net"
+import (
+	"net"
+	"sync"
+	"sync/atomic"
+)
 
 type LTQD struct {
 	topics       map[string]*Topic
@@ -21,11 +25,11 @@ type errStore struct {
 
 func NewLTQD(opts *Options) (*LTQD, error) {
 	//设置选项
-	dataPath := opts.DataPath
-	if opts.DataPath == "" {
-		cwd, _ := os.Getwd()
-		dataPath = cwd
-	}
+	// dataPath := opts.DataPath
+	// if opts.DataPath == "" {
+	// 	cwd, _ := os.Getwd()
+	// 	dataPath = cwd
+	// }
 
 	//创建ltqd
 	l := &LTQD{
@@ -55,13 +59,13 @@ func (l *LTQD) GetTopic(name string) *Topic {
 	}
 	//使用Topic构造函数
 	t = NewTopic(name, l)
-	n.topicMap[topicName] = t
-	n.Unlock()
-	fmt.Println("TOPIC(%s): created", t.name)
+	l.topics[name] = t
+	l.Unlock()
+	fmtLogf(Debug, "TOPIC(%s): created", t.name)
 	//当创建了topic后需要给topic startChan发送标志，开始messagePump
 
 	//如果正在loading中，则不需要启动messagePump
-	if atomic.LoadInt32(&n.isLoading) == 1 {
+	if atomic.LoadInt32(&l.isLoading) == 1 {
 		//loading结束后，会启动所有channel的messagePump
 		return t
 	}
@@ -80,17 +84,17 @@ func (l *LTQD) IsHealthy() bool {
 }
 
 func (l *LTQD) GetError() error {
-	errValue := n.errValue.Load()
+	errValue := l.errValue.Load()
 	return errValue.(errStore).err
 }
 
-//配置选项参数
-func (n *NSQD) getOpts() *Options {
-	return n.opts.Load().(*Options)
+// 配置选项参数
+func (l *LTQD) getOpts() *Options {
+	return l.opts.Load().(*Options)
 }
 
-func (n *NSQD) setOpts(opts *Options) {
-	n.opts.Store(opts)
+func (l *LTQD) setOpts(opts *Options) {
+	l.opts.Store(opts)
 }
 
 func Main() {
