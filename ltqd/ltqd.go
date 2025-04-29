@@ -26,7 +26,9 @@ type errStore struct {
 	err error
 }
 
-func NewLTQD(opts *Options) (*LTQD, error) {
+// constructor of LTQD
+// - 初始化channel中的各个成员变量
+func New(opts *Options) (*LTQD, error) {
 	//设置选项
 	// dataPath := opts.DataPath
 	// if opts.DataPath == "" {
@@ -100,6 +102,33 @@ func (l *LTQD) setOpts(opts *Options) {
 	l.opts.Store(opts)
 }
 
+// Main
+// - ltqd节点启动的主要逻辑
+// - 启动TCP server协程 开始接受并处理来自client的TCP连接
+// - 启动HTTP server协程 开始接受并处理来自client的HTTP连接
+// - 启动queueScanLoop协程 处理in-flight queue和defered queue中的message
+// - 启动lookupLoop协程 与lookup节点交互
 func Main() {
+
+}
+
+// queueScanLoop
+// - 通过多个queueScanWorker 并发处理扫描处理各个channel
+// - 通过概率过期算法 优化scan的策略
+func queueScanLoop() {
+
+}
+
+// resizePool
+// 根据channel数量动态调整queueScanWorker的数量 对worker数量进行增减
+func resizePool() {
+
+}
+
+// lookupLoop
+// 每15s向lookup节点发送heartbeat
+// 通过notifyChan接收来自topic/channel的创建/删除消息 向lookup节点register/unregister
+// 通过optsNotificationChan接收opts变更的消息 更新lookup节点的地址
+func lookupLoop() {
 
 }
