@@ -20,7 +20,7 @@ type tcpServer struct {
 }
 
 func (p *tcpServer) Handle(conn net.Conn) {
-	fmtLogf(Debug, "TCP: new client(%s)", conn.RemoteAddr())
+	fmtLogf(Debug, "TCP: new client(%v)", conn.RemoteAddr())
 
 	prot := &Protocol{ltqd: p.ltqd}
 
@@ -29,7 +29,7 @@ func (p *tcpServer) Handle(conn net.Conn) {
 
 	err := prot.IOLoop(client)
 	if err != nil {
-		fmtLogf(Debug, "client(%s) - %s", conn.RemoteAddr(), err)
+		fmtLogf(Debug, "client(%v) - %v", conn.RemoteAddr(), err)
 	}
 
 	p.conns.Delete(conn.RemoteAddr())

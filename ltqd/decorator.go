@@ -43,7 +43,7 @@ func Log(logf AppLogFunc) Decorator {
 			if e, ok := err.(Err); ok {
 				status = e.Code
 			}
-			logf(Debug, "%d %s %s (%s) %s",
+			logf(Debug, "%d %v %v (%v) %v",
 				status, req.Method, req.URL.RequestURI(), req.RemoteAddr, elapsed)
 			return response, err
 		}
@@ -89,7 +89,7 @@ func RespondV1(w http.ResponseWriter, code int, data interface{}) {
 		isJSON = true
 		response, _ = json.Marshal(struct {
 			Message string `json:"message"`
-		}{fmt.Sprintf("%s", data)})
+		}{fmt.Sprintf("%v", data)})
 	}
 
 	if isJSON {

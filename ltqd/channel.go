@@ -100,7 +100,7 @@ func (c *Channel) put(m *Message) error {
 	err := writeMessageToBackend(m, c.backendMsgChan)
 	c.ltqd.SetHealth(err)
 	if err != nil {
-		fmtLogf(Debug, "CHANNEL(%s): put message to backend - %s", c.name, err)
+		fmtLogf(Debug, "CHANNEL(%v): put message to backend - %v", c.name, err)
 		return err
 	}
 	return nil

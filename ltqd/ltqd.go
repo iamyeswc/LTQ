@@ -1,10 +1,11 @@
 package ltqd
 
 import (
-	"crypto/rand"
+	"encoding/json"
 	"fmt"
-	"math/big"
 	"net"
+	"os"
+	"path"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -57,13 +58,13 @@ func New(opts *Options) (*LTQD, error) {
 	l.tcpServer = &tcpServer{ltqd: l}
 	l.tcpListener, err = net.Listen(TypeOfAddr(opts.TCPAddress), opts.TCPAddress)
 	if err != nil {
-		return nil, fmt.Errorf("listen (%s) failed - %s", opts.TCPAddress, err)
+		return nil, fmt.Errorf("listen (%v) failed - %v", opts.TCPAddress, err)
 	}
 
 	if opts.HTTPAddress != "" {
 		l.httpListener, err = net.Listen(TypeOfAddr(opts.HTTPAddress), opts.HTTPAddress)
 		if err != nil {
-			return nil, fmt.Errorf("listen (%s) failed - %s", opts.HTTPAddress, err)
+			return nil, fmt.Errorf("listen (%v) failed - %v", opts.HTTPAddress, err)
 		}
 	}
 
@@ -91,7 +92,7 @@ func (l *LTQD) GetTopic(name string) *Topic {
 	t = NewTopic(name, l)
 	l.topics[name] = t
 	l.Unlock()
-	fmtLogf(Debug, "TOPIC(%s): created", t.name)
+	fmtLogf(Debug, "TOPIC(%v): created", t.name)
 	//当创建了topic后需要给topic startChan发送标志，开始messagePump
 
 	//如果正在loading中，则不需要启动messagePump
@@ -282,4 +283,61 @@ func (l *LTQD) channels() []*Channel {
 	}
 	l.RUnlock()
 	return channels
+}
+
+func (l *LTQD) LoadMetadata() error {
+	atomic.StoreInt32(&l.isLoading, 1)
+	defer atomic.StoreInt32(&l.isLoading, 0)
+
+	fn := newMetadataFile(l.getOpts())
+
+	data, err := readOrEmpty(fn)
+	if err != nil {
+		return err
+	}
+	if data == nil {
+		return nil // fresh start
+	}
+
+	var m Metadata
+	err = json.Unmarshal(data, &m)
+	if err != nil {
+		return fmt.Errorf("failed to parse metadata in %s - %s", fn, err)
+	}
+
+	for _, t := range m.Topics {
+		if !IsValidTopicName(t.Name) {
+			fmtLogf(Debug, "skipping creation of invalid topic %s", t.Name)
+			continue
+		}
+		topic := l.GetTopic(t.Name)
+		for _, c := range t.Channels {
+			if !IsValidChannelName(c.Name) {
+				fmtLogf(Debug, "skipping creation of invalid channel %s", c.Name)
+				continue
+			}
+			// channel := topic.GetChannel(c.Name)
+		}
+		topic.Start()
+	}
+	return nil
+}
+
+type Metadata struct {
+	Topics  []TopicMetadata `json:"topics"`
+	Version string          `json:"version"`
+}
+
+func newMetadataFile(opts *Options) string {
+	return path.Join(opts.DataPath, "nsqd.dat")
+}
+
+func readOrEmpty(fn string) ([]byte, error) {
+	data, err := os.ReadFile(fn)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return nil, fmt.Errorf("failed to read metadata from %s - %s", fn, err)
+		}
+	}
+	return data, nil
 }

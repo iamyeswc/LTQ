@@ -8,7 +8,7 @@ import (
 )
 
 func Serve(listener net.Listener, handler http.Handler, proto string) error {
-	fmtLogf(Debug, "%s: listening on %s", proto, listener.Addr())
+	fmtLogf(Debug, "%v: listening on %v", proto, listener.Addr())
 
 	server := &http.Server{
 		Handler: handler,
@@ -16,10 +16,10 @@ func Serve(listener net.Listener, handler http.Handler, proto string) error {
 	err := server.Serve(listener)
 	// theres no direct way to detect this error because it is not exposed
 	if err != nil && !errors.Is(err, net.ErrClosed) {
-		return fmt.Errorf("http.Serve() error - %s", err)
+		return fmt.Errorf("http.Serve() error - %v", err)
 	}
 
-	fmtLogf(Debug, "%s: closing %s", proto, listener.Addr())
+	fmtLogf(Debug, "%v: closing %v", proto, listener.Addr())
 
 	return nil
 }

@@ -112,7 +112,7 @@ func (t *Topic) getOrCreateChannel(name string) (*Channel, bool) {
 		//找不到channel就创建一个
 		channel = NewChannel(t.name, name, t.ltqd)
 		t.channels[name] = channel
-		fmtLogf(Debug, "TOPIC(%s): new channel(%s)", t.name, channel.name)
+		fmtLogf(Debug, "TOPIC(%v): new channel(%v)", t.name, channel.name)
 		return channel, true
 	}
 	return channel, false
@@ -148,7 +148,7 @@ func (t *Topic) messagePump() {
 		case <-t.channelUpdateChan: //这时候更新channel 不用进入主循环
 			continue
 		case <-t.exitChan:
-			fmtLogf(Debug, "TOPIC(%s): closing ... messagePump", t.name)
+			fmtLogf(Debug, "TOPIC(%v): closing ... messagePump", t.name)
 			return
 		case <-t.startChan:
 		}
@@ -174,7 +174,7 @@ func (t *Topic) messagePump() {
 		case buf = <-backendMsgChan:
 			msg, err = decodeMessage(buf)
 			if err != nil {
-				fmtLogf(Debug, "TOPIC(%s): failed to decode message - %s", t.name, err)
+				fmtLogf(Debug, "TOPIC(%v): failed to decode message - %v", t.name, err)
 				continue
 			}
 		case <-t.channelUpdateChan:
@@ -194,7 +194,7 @@ func (t *Topic) messagePump() {
 			}
 			continue
 		case <-t.exitChan:
-			fmtLogf(Debug, "TOPIC(%s): closing ... messagePump", t.name)
+			fmtLogf(Debug, "TOPIC(%v): closing ... messagePump", t.name)
 			return
 		}
 
@@ -207,7 +207,7 @@ func (t *Topic) messagePump() {
 			}
 			err := channel.PutMessage(chanMsg)
 			if err != nil {
-				fmtLogf(Debug, "TOPIC(%s): failed to put msg(%s) to channel(%s) - %s", t.name, msg.ID, channel.name, err)
+				fmtLogf(Debug, "TOPIC(%v): failed to put msg(%v) to channel(%v) - %v", t.name, msg.ID, channel.name, err)
 			}
 		}
 	}
@@ -269,7 +269,7 @@ func (t *Topic) put(m *Message) error {
 	err := writeMessageToBackend(m, t.backendMsgChan)
 	t.ltqd.SetHealth(err)
 	if err != nil {
-		fmtLogf(Debug, "TOPIC(%s) ERROR: failed to write message to backend - %s", t.name, err)
+		fmtLogf(Debug, "TOPIC(%v) ERROR: failed to write message to backend - %v", t.name, err)
 		return err
 	}
 	return nil
@@ -284,7 +284,7 @@ func (t *Topic) GenerateID() MessageID {
 			return id.Hex()
 		}
 		if i%10000 == 0 {
-			fmtLogf(Debug, "TOPIC(%s): failed to create guid - %s", t.name, err)
+			fmtLogf(Debug, "TOPIC(%v): failed to create guid - %v", t.name, err)
 		}
 		time.Sleep(time.Millisecond)
 		i++

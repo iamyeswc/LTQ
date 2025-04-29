@@ -67,7 +67,7 @@ func (s *httpServer) doPUB(w http.ResponseWriter, req *http.Request, ps httprout
 func (s *httpServer) getTopicFromQuery(req *http.Request) (url.Values, *Topic, error) {
 	reqParams, err := url.ParseQuery(req.URL.RawQuery)
 	if err != nil {
-		fmtLogf(Debug, "failed to parse request params - %s", err)
+		fmtLogf(Debug, "failed to parse request params - %v", err)
 		return nil, nil, Err{400, "INVALID_REQUEST"}
 	}
 
