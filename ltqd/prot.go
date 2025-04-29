@@ -266,37 +266,35 @@ func (p *Protocol) SUB(client *client, params [][]byte) ([]byte, error) {
 	return okBytes, nil
 }
 
-// func (p *Protocol) RDY(client *client, params [][]byte) ([]byte, error) {
-// 	state := atomic.LoadInt32(&client.State)
+func (p *Protocol) RDY(client *client, params [][]byte) ([]byte, error) {
+	state := atomic.LoadInt32(&client.State)
 
-// 	if state == stateClosing {
-// 		// just ignore ready changes on a closing channel
-// 		fmtLogf(Debug, "PROTOCOL: [%v] ignoring RDY after CLS in state ClientStateV2Closing",
-// 			client)
-// 		return nil, nil
-// 	}
+	if state == stateClosing {
+		// just ignore ready changes on a closing channel
+		fmtLogf(Debug, "PROTOCOL: [%v] ignoring RDY after CLS in state ClientStateV2Closing",
+			client)
+		return nil, nil
+	}
 
-// 	if state != stateSubscribed {
-// 		return nil, fmt.Errorf("cannot RDY in current state")
-// 	}
+	if state != stateSubscribed {
+		return nil, fmt.Errorf("cannot RDY in current state")
+	}
 
-// 	count := int64(1)
-// 	if len(params) > 1 {
-// 		b10, err := ByteToBase10(params[1])
-// 		if err != nil {
-// 			return nil, fmt.Errorf(fmt.Sprintf("RDY could not parse count %v", params[1]))
-// 		}
-// 		count = int64(b10)
-// 	}
+	count := int64(1)
+	if len(params) > 1 {
+		b10, err := ByteToBase10(params[1])
+		if err != nil {
+			return nil, fmt.Errorf(fmt.Sprintf("RDY could not parse count %v", params[1]))
+		}
+		count = int64(b10)
+	}
 
-// 	if count < 0 || count > p.ltqd.getOpts().MaxRdyCount {
-// 		return nil, fmt.Errorf(fmt.Sprintf("RDY count %d out of range 0-%d", count, p.ltqd.getOpts().MaxRdyCount))
-// 	}
+	if count < 0 || count > p.ltqd.getOpts().MaxRdyCount {
+		return nil, fmt.Errorf(fmt.Sprintf("RDY count %d out of range 0-%d", count, p.ltqd.getOpts().MaxRdyCount))
+	}
 
-// 	client.SetReadyCount(count)
-
-// 	return nil, nil
-// }
+	return nil, nil
+}
 
 func (p *Protocol) FIN(client *client, params [][]byte) ([]byte, error) {
 	state := atomic.LoadInt32(&client.State)
