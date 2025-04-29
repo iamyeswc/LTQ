@@ -48,6 +48,13 @@ func GetExistingChannel() {
 
 }
 
+// DeleteExistingChannel
+// - 保证channel存在的前提下 从当前topic下删除channel
+// - 通过channelUpdateChan，在删除channel时与messagePump做消息传递 messagePump需要重新获取所有的channel
+func DeleteExistingChannel(){
+	
+}
+
 // messagePump
 // - 当前topic的消息处理函数
 // - 不断select接收来自in-memory queue和backend queue的消息 并复制到当前topic的每个channel
