@@ -63,6 +63,7 @@ func NewTopic(name string, ltqd *LTQD) *Topic {
 	)
 
 	t.waitGroup.Wrap(t.messagePump)
+	t.ltqd.Notify(t)
 
 	return t
 }

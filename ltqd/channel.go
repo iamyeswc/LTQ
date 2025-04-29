@@ -2,6 +2,7 @@ package ltqd
 
 import (
 	"errors"
+	"math"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -46,6 +47,8 @@ func NewChannel(name, topicName string, ltqd *LTQD) *Channel {
 		memoryMsgChan: make(chan *Message, ltqd.getOpts().MemQueueSize),
 	}
 
+	c.initPQ()
+
 	dqLogf := func(level diskqueue.LogLevel, f string, args ...interface{}) {
 		fmtLogf(Debug, f, args...)
 	}
@@ -60,6 +63,8 @@ func NewChannel(name, topicName string, ltqd *LTQD) *Channel {
 		ltqd.getOpts().SyncTimeout,
 		dqLogf,
 	)
+
+	c.ltqd.Notify(c)
 
 	return c
 }
@@ -302,5 +307,14 @@ func (c *Channel) flush() error {
 			return nil
 		}
 	}
+}
+
+func (c *Channel) initPQ() {
+	pqSize := int(math.Max(1, float64(c.ltqd.getOpts().MemQueueSize)/10))
+
+	c.inFlightMutex.Lock()
+	c.inFlightMessages = make(map[MessageID]*Message)
+	c.inFlightPQ = newInFlightPqueue(pqSize)
+	c.inFlightMutex.Unlock()
 
 }

@@ -65,7 +65,7 @@ func (p *Protocol) IOLoop(c Client) error {
 		}
 		params := bytes.Split(line, separatorBytes)
 
-		fmtLogf(Debug, "PROTOCOL(V2): [%v] - %v", client, params)
+		fmtLogf(Debug, "PROTOCOL: [%v] - %v", client, params)
 
 		var response []byte
 		response, err = p.Exec(client, params)
@@ -126,7 +126,7 @@ func (p *Protocol) messagePump(client *client, startedChan chan bool) {
 			// decodeMessage then handle msg
 		case msg = <-memoryMsgChan:
 		case <-client.ExitChan:
-			fmtLogf(Debug, "PROTOCOL(V2): [%v] exiting messagePump", client)
+			fmtLogf(Debug, "PROTOCOL: [%v] exiting messagePump", client)
 			return
 		}
 		if len(b) != 0 {
@@ -141,7 +141,7 @@ func (p *Protocol) messagePump(client *client, startedChan chan bool) {
 			subChannel.StartInFlightTimeout(msg, client.ID, msgTimeout)
 			err = p.SendMessage(client, msg)
 			if err != nil {
-				fmtLogf(Debug, "PROTOCOL(V2): [%v] messagePump error - %v", client, err)
+				fmtLogf(Debug, "PROTOCOL: [%v] messagePump error - %v", client, err)
 				return
 			}
 		}
@@ -151,7 +151,7 @@ func (p *Protocol) messagePump(client *client, startedChan chan bool) {
 }
 
 func (p *Protocol) SendMessage(client *client, msg *Message) error {
-	fmtLogf(Debug, "PROTOCOL(V2): writing msg(%v) to client(%v) - %v", msg.ID, client, msg.Body)
+	fmtLogf(Debug, "PROTOCOL: writing msg(%v) to client(%v) - %v", msg.ID, client, msg.Body)
 
 	buf := bufferPoolGet()
 	defer bufferPoolPut(buf)

@@ -38,6 +38,9 @@ type LTQD struct {
 
 	//用系统锁给文件目录加锁
 	dl *DirLock
+
+	//通知lookup的channel
+	notifyChan chan interface{}
 }
 type errStore struct {
 	err error
@@ -56,9 +59,10 @@ func New(opts *Options) (*LTQD, error) {
 
 	//创建ltqd
 	l := &LTQD{
-		topics:   make(map[string]*Topic),
-		exitChan: make(chan int, 1),
-		dl:       NewDirLock(dataPath),
+		topics:     make(map[string]*Topic),
+		exitChan:   make(chan int, 1),
+		dl:         NewDirLock(dataPath),
+		notifyChan: make(chan interface{}, 1),
 	}
 	l.setOpts(opts)
 	//给文件目录加锁
@@ -372,7 +376,6 @@ func (l *LTQD) Exit() {
 }
 
 func (l *LTQD) PersistMetadata() error {
-	// persist metadata about what topics/channels we have, across restarts
 	fileName := newMetadataFile(l.getOpts())
 
 	fmtLogf(Debug, "LTQ: persisting topic/channel metadata to %s", fileName)
@@ -395,7 +398,6 @@ func (l *LTQD) PersistMetadata() error {
 	if err != nil {
 		return err
 	}
-	// technically should fsync DataPath here
 
 	return nil
 }
@@ -416,6 +418,25 @@ func (l *LTQD) GetMetadata() *Metadata {
 		meta.Topics = append(meta.Topics, topicData)
 	}
 	return meta
+}
+
+func (l *LTQD) Notify(v interface{}) {
+	loading := atomic.LoadInt32(&l.isLoading) == 1
+	l.waitGroup.Wrap(func() {
+		select {
+		case <-l.exitChan:
+		case l.notifyChan <- v: //通知lookupd有更新
+			if loading {
+				return
+			}
+			l.Lock()
+			err := l.PersistMetadata()
+			if err != nil {
+				fmtLogf(Debug, "failed to persist metadata - %s", err)
+			}
+			l.Unlock()
+		}
+	})
 }
 
 type Metadata struct {
