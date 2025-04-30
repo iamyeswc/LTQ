@@ -1,4 +1,4 @@
-package ltqd
+package ltqlookupd
 
 import (
 	"fmt"
@@ -17,7 +17,7 @@ type AppLogFunc func(lvl LogLevel, f string, args ...interface{})
 // 适配器函数
 func fmtLogf(lvl LogLevel, f string, args ...interface{}) {
 	// 这里可以根据 lvl 选择不同的打印方式或格式
-	fmt.Printf("[ltqd][%v] ", lvlToString(lvl))
+	fmt.Printf("[ltqlookupd][%v] ", lvlToString(lvl))
 	fmt.Printf(f, args...)
 	fmt.Println() // 打印换行
 }

@@ -211,12 +211,14 @@ func (p *Protocol) Exec(client *client, params [][]byte) ([]byte, error) {
 	switch {
 	case bytes.Equal(params[0], []byte("FIN")):
 		return p.FIN(client, params)
-	// case bytes.Equal(params[0], []byte("RDY")):
-	// 	return p.RDY(client, params)
+	case bytes.Equal(params[0], []byte("RDY")):
+		return p.RDY(client, params)
 	case bytes.Equal(params[0], []byte("PUB")):
 		return p.PUB(client, params)
 	case bytes.Equal(params[0], []byte("SUB")):
 		return p.SUB(client, params)
+	case bytes.Equal(params[0], []byte("CRT")):
+		return p.CRT(client, params)
 	}
 	return nil, fmt.Errorf("unknown command - %v", params[0])
 }
@@ -316,6 +318,21 @@ func (p *Protocol) FIN(client *client, params [][]byte) ([]byte, error) {
 		return nil, fmt.Errorf(fmt.Sprintf("FIN %v failed %v", *id, err.Error()))
 	}
 
+	return nil, nil
+}
+
+func (p *Protocol) CRT(client *client, params [][]byte) ([]byte, error) {
+	state := atomic.LoadInt32(&client.State)
+	if state != stateSubscribed && state != stateClosing {
+		return nil, fmt.Errorf("cannot CRT in current state")
+	}
+
+	topicName := string(params[1])
+	if !IsValidTopicName(topicName) {
+		return nil, fmt.Errorf(fmt.Sprintf("CRT topic name %q is not valid", topicName))
+	}
+
+	p.ltqd.GetTopic(topicName)
 	return nil, nil
 }
 

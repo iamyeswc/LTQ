@@ -34,6 +34,11 @@ type Options struct {
 	QueueScanRefreshInterval time.Duration `flag:"queue-scan-refresh-interval"`
 	QueueScanDirtyPercent    float64       `flag:"queue-scan-dirty-percent"`
 	QueueScanWorkerPoolMax   int           `flag:"queue-scan-worker-pool-max"`
+
+	LTQLookupdTCPAddresses []string `flag:"lookupd-tcp-address" cfg:"ltqlookupd_tcp_addresses"`
+	MaxBodySize            int64    `flag:"max-body-size"`
+
+	BroadcastTCPPort int `flag:"broadcast-tcp-port"`
 }
 
 func NewOptions() *Options {
@@ -68,5 +73,10 @@ func NewOptions() *Options {
 		QueueScanRefreshInterval: 5 * time.Second,
 		QueueScanDirtyPercent:    0.25,
 		QueueScanWorkerPoolMax:   10,
+
+		LTQLookupdTCPAddresses: make([]string, 0),
+		MaxBodySize:            5 * 1024 * 1024,
+
+		BroadcastTCPPort: 0,
 	}
 }

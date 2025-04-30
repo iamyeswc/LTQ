@@ -267,7 +267,7 @@ func (c *Channel) exit() error {
 		return errors.New("exiting")
 	}
 
-	fmtLogf(Debug, "CHANNEL(%s): closing", c.name)
+	fmtLogf(Debug, "CHANNEL(%v): closing", c.name)
 
 	c.RLock()
 	//关闭和channel连接的所有客户端
@@ -283,7 +283,7 @@ func (c *Channel) exit() error {
 
 func (c *Channel) flush() error {
 	if len(c.memoryMsgChan) > 0 || len(c.inFlightMessages) > 0 {
-		fmtLogf(Debug, "CHANNEL(%s): flushing %d memory %d in-flightmessages to backend",
+		fmtLogf(Debug, "CHANNEL(%v): flushing %d memory %d in-flightmessages to backend",
 			c.name, len(c.memoryMsgChan), len(c.inFlightMessages))
 	}
 
@@ -292,14 +292,14 @@ func (c *Channel) flush() error {
 		case msg := <-c.memoryMsgChan:
 			err := writeMessageToBackend(msg, c.backendMsgChan)
 			if err != nil {
-				fmtLogf(Debug, "failed to write message to backend - %s", err)
+				fmtLogf(Debug, "failed to write message to backend - %v", err)
 			}
 		default:
 			c.inFlightMutex.Lock()
 			for _, msg := range c.inFlightMessages {
 				err := writeMessageToBackend(msg, c.backendMsgChan)
 				if err != nil {
-					fmtLogf(Debug, "failed to write message to backend - %s", err)
+					fmtLogf(Debug, "failed to write message to backend - %v", err)
 				}
 			}
 			c.inFlightMutex.Unlock()

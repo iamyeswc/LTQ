@@ -312,7 +312,7 @@ func (t *Topic) exit() error {
 		err := channel.Close()
 		if err != nil {
 			// we need to continue regardless of error to close all the channels
-			fmtLogf(Debug, "channel(%s) close - %s", channel.name, err)
+			fmtLogf(Debug, "channel(%v) close - %v", channel.name, err)
 		}
 	}
 	t.RUnlock()
@@ -324,7 +324,7 @@ func (t *Topic) exit() error {
 
 func (t *Topic) flush() error {
 	if len(t.memoryMsgChan) > 0 {
-		fmtLogf(Debug, "TOPIC(%s): flushing %d memory messages to backend", t.name, len(t.memoryMsgChan))
+		fmtLogf(Debug, "TOPIC(%v): flushing %d memory messages to backend", t.name, len(t.memoryMsgChan))
 	}
 
 	for {
@@ -332,7 +332,7 @@ func (t *Topic) flush() error {
 		case msg := <-t.memoryMsgChan:
 			err := writeMessageToBackend(msg, t.backendMsgChan)
 			if err != nil {
-				fmtLogf(Debug, "ERROR: failed to write message to backend - %s", err)
+				fmtLogf(Debug, "ERROR: failed to write message to backend - %v", err)
 			}
 		default:
 			return nil

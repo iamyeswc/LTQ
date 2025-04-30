@@ -1,4 +1,4 @@
-package ltqd
+package ltqlookupd
 
 import (
 	"net"
@@ -6,14 +6,14 @@ import (
 )
 
 type tcpServer struct {
-	ltqd  *LTQD
-	conns sync.Map
+	ltqlookupd *LTQLOOKUPD
+	conns      sync.Map
 }
 
 func (p *tcpServer) Handle(conn net.Conn) {
 	fmtLogf(Debug, "TCP: new client(%v)", conn.RemoteAddr())
 
-	prot := &Protocol{ltqd: p.ltqd}
+	prot := &Protocol{ltqlookupd: p.ltqlookupd}
 
 	client := prot.NewClient(conn)
 	p.conns.Store(conn.RemoteAddr(), client)

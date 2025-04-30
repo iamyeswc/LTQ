@@ -1,4 +1,4 @@
-package ltqd
+package ltqlookupd
 
 import (
 	"encoding/json"
@@ -95,7 +95,7 @@ func RespondV1(w http.ResponseWriter, code int, data interface{}) {
 	if isJSON {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	}
-	w.Header().Set("X-LTQ-Content-Type", "ltq; version=1.0")
+	w.Header().Set("X-LTQLOOKUP-Content-Type", "ltq; version=1.0")
 	w.WriteHeader(code)
 	w.Write(response)
 }

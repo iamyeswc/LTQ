@@ -1,4 +1,4 @@
-package ltqd
+package ltqlookupd
 
 import (
 	"errors"

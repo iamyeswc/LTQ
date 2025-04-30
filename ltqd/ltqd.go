@@ -14,12 +14,11 @@ import (
 )
 
 type LTQD struct {
-	topics       map[string]*Topic
-	tcpServer    *tcpServer
-	tcpListener  net.Listener
-	httpListener net.Listener
-	isLoading    int32 //加载的标志位
-	isExiting    int32 //退出的标志位
+	topics      map[string]*Topic
+	tcpServer   *tcpServer
+	tcpListener net.Listener
+	isLoading   int32 //加载的标志位
+	isExiting   int32 //退出的标志位
 
 	sync.RWMutex
 
@@ -41,6 +40,8 @@ type LTQD struct {
 
 	//通知lookup的channel
 	notifyChan chan interface{}
+
+	lookupPeers atomic.Value
 }
 type errStore struct {
 	err error
@@ -75,13 +76,6 @@ func New(opts *Options) (*LTQD, error) {
 	l.tcpListener, err = net.Listen(TypeOfAddr(opts.TCPAddress), opts.TCPAddress)
 	if err != nil {
 		return nil, fmt.Errorf("listen (%v) failed - %v", opts.TCPAddress, err)
-	}
-
-	if opts.HTTPAddress != "" {
-		l.httpListener, err = net.Listen(TypeOfAddr(opts.HTTPAddress), opts.HTTPAddress)
-		if err != nil {
-			return nil, fmt.Errorf("listen (%v) failed - %v", opts.HTTPAddress, err)
-		}
 	}
 
 	return l, nil
@@ -147,8 +141,8 @@ func (l *LTQD) setOpts(opts *Options) {
 // Main
 // - ltqd节点启动的主要逻辑
 // - 启动TCP server协程 开始接受并处理来自client的TCP连接
-// - 启动HTTP server协程 开始接受并处理来自client的HTTP连接
-// - 启动queueScanLoop协程 处理in-flight queue和defered queue中的message
+// - 删除 启动HTTP server协程 开始接受并处理来自client的HTTP连接 -> 与客户端的操作统一使用TCP连接
+// - 启动queueScanLoop协程 处理in-flight queue中的message
 // - 启动lookupLoop协程 与lookup节点交互
 func (l *LTQD) Main() error {
 	exitCh := make(chan error)
@@ -165,12 +159,6 @@ func (l *LTQD) Main() error {
 	l.waitGroup.Wrap(func() {
 		exitFunc(TCPServer(l.tcpListener, l.tcpServer))
 	})
-	if l.httpListener != nil {
-		httpServer := newHTTPServer(l)
-		l.waitGroup.Wrap(func() {
-			exitFunc(Serve(l.httpListener, httpServer, "HTTP"))
-		})
-	}
 
 	l.waitGroup.Wrap(l.queueScanLoop)
 	// l.waitGroup.Wrap(l.lookupLoop)
@@ -265,8 +253,83 @@ func (l *LTQD) resizePool(num int, workCh chan *Channel, responseCh chan bool, c
 // lookupLoop
 // 每15s向lookup节点发送heartbeat
 // 通过notifyChan接收来自topic/channel的创建/删除消息 向lookup节点register/unregister
-// 通过optsNotificationChan接收opts变更的消息 更新lookup节点的地址
-func lookupLoop() {
+func (l *LTQD) lookupLoop() {
+	var lookupPeers []*LookupPeer
+	var lookupAddrs []string
+	connect := true
+
+	hostname, err := os.Hostname()
+	if err != nil {
+		fmtLogf(Debug, "failed to get hostname - %v", err)
+		os.Exit(1)
+	}
+
+	// for announcements, lookupd determines the host automatically
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+	for {
+		if connect {
+			for _, host := range l.getOpts().LTQLookupdTCPAddresses {
+				if in(host, lookupAddrs) {
+					continue
+				}
+				fmtLogf(Debug, "LOOKUP(%v): adding peer", host)
+				lookupPeer := newLookupPeer(host, l.getOpts().MaxBodySize,
+					connectCallback(l, hostname))
+				lookupPeer.Command(nil) // start the connection
+				lookupPeers = append(lookupPeers, lookupPeer)
+				lookupAddrs = append(lookupAddrs, host)
+			}
+			l.lookupPeers.Store(lookupPeers)
+			connect = false
+		}
+
+		select {
+		case <-ticker.C:
+			// send a heartbeat and read a response (read detects closed conns)
+			for _, lookupPeer := range lookupPeers {
+				fmtLogf(Debug, "LOOKUPD(%v): sending heartbeat", lookupPeer)
+				cmd := Ping()
+				_, err := lookupPeer.Command(cmd)
+				if err != nil {
+					fmtLogf(Debug, "LOOKUPD(%v): %v - %v", lookupPeer, cmd, err)
+				}
+			}
+		case val := <-l.notifyChan:
+			var cmd *Command
+			var branch string
+
+			switch val := val.(type) {
+			case *Channel:
+				branch = "channel"
+				channel := val
+				if channel.Exiting() {
+					cmd = UnRegister(channel.topicName, channel.name)
+				} else {
+					cmd = Register(channel.topicName, channel.name)
+				}
+			case *Topic:
+				branch = "topic"
+				topic := val
+				if topic.Exiting() {
+					cmd = UnRegister(topic.name, "")
+				} else {
+					cmd = Register(topic.name, "")
+				}
+			}
+
+			for _, lookupPeer := range lookupPeers {
+				fmtLogf(Debug, "LOOKUPD(%v): %v %v", lookupPeer, branch, cmd)
+				_, err := lookupPeer.Command(cmd)
+				if err != nil {
+					fmtLogf(Debug, "LOOKUPD(%v): %v - %v", lookupPeer, cmd, err)
+				}
+			}
+		case <-l.exitChan:
+			fmtLogf(Debug, "LOOKUP: closing")
+			return
+		}
+	}
 
 }
 
@@ -318,18 +381,18 @@ func (l *LTQD) LoadMetadata() error {
 	var m Metadata
 	err = json.Unmarshal(data, &m)
 	if err != nil {
-		return fmt.Errorf("failed to parse metadata in %s - %s", fn, err)
+		return fmt.Errorf("failed to parse metadata in %v - %v", fn, err)
 	}
 
 	for _, t := range m.Topics {
 		if !IsValidTopicName(t.Name) {
-			fmtLogf(Debug, "skipping creation of invalid topic %s", t.Name)
+			fmtLogf(Debug, "skipping creation of invalid topic %v", t.Name)
 			continue
 		}
 		topic := l.GetTopic(t.Name)
 		for _, c := range t.Channels {
 			if !IsValidChannelName(c.Name) {
-				fmtLogf(Debug, "skipping creation of invalid channel %s", c.Name)
+				fmtLogf(Debug, "skipping creation of invalid channel %v", c.Name)
 				continue
 			}
 			topic.GetChannel(c.Name)
@@ -341,7 +404,6 @@ func (l *LTQD) LoadMetadata() error {
 
 func (l *LTQD) Exit() {
 	if !atomic.CompareAndSwapInt32(&l.isExiting, 0, 1) {
-		// avoid double call
 		return
 	}
 	if l.tcpListener != nil {
@@ -352,14 +414,10 @@ func (l *LTQD) Exit() {
 		l.tcpServer.Close()
 	}
 
-	if l.httpListener != nil {
-		l.httpListener.Close()
-	}
-
 	l.Lock()
 	err := l.PersistMetadata()
 	if err != nil {
-		fmtLogf(Debug, "failed to persist metadata - %s", err)
+		fmtLogf(Debug, "failed to persist metadata - %v", err)
 	}
 	fmtLogf(Debug, "LTQ: closing topics")
 	for _, topic := range l.topics {
@@ -378,7 +436,7 @@ func (l *LTQD) Exit() {
 func (l *LTQD) PersistMetadata() error {
 	fileName := newMetadataFile(l.getOpts())
 
-	fmtLogf(Debug, "LTQ: persisting topic/channel metadata to %s", fileName)
+	fmtLogf(Debug, "LTQ: persisting topic/channel metadata to %v", fileName)
 
 	data, err := json.Marshal(l.GetMetadata())
 	if err != nil {
@@ -389,7 +447,7 @@ func (l *LTQD) PersistMetadata() error {
 	if err != nil {
 		return fmt.Errorf("failed to generate random number: %v", err)
 	}
-	tmpFileName := fmt.Sprintf("%s.%d.tmp", fileName, n.Int64())
+	tmpFileName := fmt.Sprintf("%v.%d.tmp", fileName, n.Int64())
 	err = writeSyncFile(tmpFileName, data)
 	if err != nil {
 		return err
@@ -432,7 +490,7 @@ func (l *LTQD) Notify(v interface{}) {
 			l.Lock()
 			err := l.PersistMetadata()
 			if err != nil {
-				fmtLogf(Debug, "failed to persist metadata - %s", err)
+				fmtLogf(Debug, "failed to persist metadata - %v", err)
 			}
 			l.Unlock()
 		}
@@ -460,7 +518,7 @@ func readOrEmpty(fn string) ([]byte, error) {
 	data, err := os.ReadFile(fn)
 	if err != nil {
 		if !os.IsNotExist(err) {
-			return nil, fmt.Errorf("failed to read metadata from %s - %s", fn, err)
+			return nil, fmt.Errorf("failed to read metadata from %v - %v", fn, err)
 		}
 	}
 	return data, nil
@@ -478,4 +536,13 @@ func writeSyncFile(fn string, data []byte) error {
 	}
 	f.Close()
 	return err
+}
+
+func in(s string, lst []string) bool {
+	for _, v := range lst {
+		if s == v {
+			return true
+		}
+	}
+	return false
 }
