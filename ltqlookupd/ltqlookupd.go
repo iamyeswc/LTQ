@@ -48,3 +48,45 @@ func (l *LTQLOOKUPD) RealTCPAddr() *net.TCPAddr {
 func (l *LTQLOOKUPD) RealHTTPAddr() *net.TCPAddr {
 	return l.httpListener.Addr().(*net.TCPAddr)
 }
+
+// 监听客户端的HTTP请求
+// 监听ltqd的TCP请求
+func (l *LTQLOOKUPD) Main() error {
+	exitCh := make(chan error)
+	var once sync.Once
+	exitFunc := func(err error) {
+		once.Do(func() {
+			if err != nil {
+				fmtLogf(Debug, "%s", err)
+			}
+			exitCh <- err
+		})
+	}
+
+	l.waitGroup.Wrap(func() {
+		exitFunc(TCPServer(l.tcpListener, l.tcpServer))
+	})
+	httpServer := newHTTPServer(l)
+	l.waitGroup.Wrap(func() {
+		exitFunc(Serve(l.httpListener, httpServer, "HTTP"))
+	})
+
+	err := <-exitCh
+	return err
+
+}
+
+func (l *LTQLOOKUPD) Exit() {
+	if l.tcpListener != nil {
+		l.tcpListener.Close()
+	}
+
+	if l.tcpServer != nil {
+		l.tcpServer.Close()
+	}
+
+	if l.httpListener != nil {
+		l.httpListener.Close()
+	}
+	l.waitGroup.Wait()
+}
