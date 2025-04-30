@@ -1,8 +1,12 @@
 package main
 
 import (
+	"bytes"
+	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 )
 
@@ -41,4 +45,56 @@ func main() {
 
 	// 打印响应
 	fmt.Printf("Response: %s\n", string(body))
+	var response Response
+	err = json.Unmarshal(body, &response)
+	if err != nil {
+		fmt.Printf("Failed to parse JSON response: %v\n", err)
+		return
+	}
+
+	producer := response.Producers[0] // 选择第一个 Producer
+	fmt.Printf("Using Producer: %+v\n", producer)
+
+	// 构造 TCP 地址
+	address := fmt.Sprintf("%s:%d", producer.Hostname, producer.TCPPort)
+
+	// 发送 PUB 请求
+	err = sendPUB(address, topicName, "Hello, LTQD!")
+	if err != nil {
+		fmt.Printf("Failed to send PUB request: %v\n", err)
+		return
+	}
+}
+
+// 发送 PUB 请求
+func sendPUB(address, topic, message string) error {
+	conn, err := net.Dial("tcp", address)
+	if err != nil {
+		return fmt.Errorf("failed to connect to LTQD: %v", err)
+	}
+	defer conn.Close()
+
+	// 构造 PUB 命令
+	var buf bytes.Buffer
+	buf.WriteString(fmt.Sprintf("PUB %s\n", topic)) // PUB 命令和 Topic 名称
+	messageLength := uint32(len(message))
+	lengthBytes := make([]byte, 4)
+	binary.BigEndian.PutUint32(lengthBytes, messageLength)
+	buf.Write(lengthBytes)   // 消息长度
+	buf.WriteString(message) // 消息内容
+
+	// 发送命令
+	_, err = conn.Write(buf.Bytes())
+	if err != nil {
+		return fmt.Errorf("failed to send PUB command: %v", err)
+	}
+
+	// 读取响应
+	response := make([]byte, 1024)
+	n, err := conn.Read(response)
+	if err != nil {
+		return fmt.Errorf("failed to read PUB response: %v", err)
+	}
+	fmt.Printf("PUB Response: %s\n", string(response[:n]))
+	return nil
 }
