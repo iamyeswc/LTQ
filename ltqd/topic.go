@@ -45,6 +45,7 @@ func NewTopic(name string, ltqd *LTQD) *Topic {
 		exitChan:          make(chan int),
 		channelUpdateChan: make(chan int),
 		channels:          make(map[string]*Channel),
+		idFactory:         NewGUIDFactory(ltqd.getOpts().ID),
 	}
 
 	dqLogf := func(level diskqueue.LogLevel, f string, args ...interface{}) {
@@ -111,7 +112,7 @@ func (t *Topic) getOrCreateChannel(name string) (*Channel, bool) {
 	channel, ok := t.channels[name]
 	if !ok {
 		//找不到channel就创建一个
-		channel = NewChannel(t.name, name, t.ltqd)
+		channel = NewChannel(name, t.name, t.ltqd)
 		t.channels[name] = channel
 		fmtLogf(Debug, "TOPIC(%v): new channel(%v)", t.name, channel.name)
 		return channel, true

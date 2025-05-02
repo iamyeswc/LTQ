@@ -12,8 +12,8 @@ type Options struct {
 	// basic options
 	ID int64 `flag:"node-id" cfg:"id"`
 
-	TCPAddress  string `flag:"tcp-address"`
-	HTTPAddress string `flag:"http-address"`
+	TCPAddress       string `flag:"tcp-address"`
+	BroadcastTCPPort int    `flag:"broadcast-tcp-port"`
 
 	// diskqueue options
 	DataPath        string        `flag:"data-path"`
@@ -35,10 +35,9 @@ type Options struct {
 	QueueScanDirtyPercent    float64       `flag:"queue-scan-dirty-percent"`
 	QueueScanWorkerPoolMax   int           `flag:"queue-scan-worker-pool-max"`
 
-	LTQLookupdTCPAddresses []string `flag:"lookupd-tcp-address" cfg:"ltqlookupd_tcp_addresses"`
-	MaxBodySize            int64    `flag:"max-body-size"`
-
-	BroadcastTCPPort int `flag:"broadcast-tcp-port"`
+	LTQLookupdTCPAddresses []string      `flag:"lookupd-tcp-address" cfg:"ltqlookupd_tcp_addresses"`
+	MaxBodySize            int64         `flag:"max-body-size"`
+	MaxMsgTimeout          time.Duration `flag:"max-msg-timeout"`
 }
 
 func NewOptions() *Options {
@@ -54,8 +53,8 @@ func NewOptions() *Options {
 	return &Options{
 		ID: defaultID,
 
-		TCPAddress:  "0.0.0.0:4150",
-		HTTPAddress: "0.0.0.0:4151",
+		TCPAddress:       "0.0.0.0:4150",
+		BroadcastTCPPort: 0,
 
 		MemQueueSize:    10000,
 		MaxBytesPerFile: 100 * 1024 * 1024,
@@ -74,9 +73,8 @@ func NewOptions() *Options {
 		QueueScanDirtyPercent:    0.25,
 		QueueScanWorkerPoolMax:   10,
 
-		LTQLookupdTCPAddresses: make([]string, 0),
+		LTQLookupdTCPAddresses: []string{"0.0.0.0:4160"},
 		MaxBodySize:            5 * 1024 * 1024,
-
-		BroadcastTCPPort: 0,
+		MaxMsgTimeout:          2 * time.Minute,
 	}
 }

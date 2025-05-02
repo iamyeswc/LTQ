@@ -52,12 +52,13 @@ func (l *LTQLOOKUPD) RealHTTPAddr() *net.TCPAddr {
 // 监听客户端的HTTP请求
 // 监听ltqd的TCP请求
 func (l *LTQLOOKUPD) Main() error {
+	fmtLogf(Debug, "start main")
 	exitCh := make(chan error)
 	var once sync.Once
 	exitFunc := func(err error) {
 		once.Do(func() {
 			if err != nil {
-				fmtLogf(Debug, "%s", err)
+				fmtLogf(Debug, "%v", err)
 			}
 			exitCh <- err
 		})

@@ -20,10 +20,9 @@ type LookupPeer struct {
 }
 
 type peerInfo struct {
-	TCPPort          int    `json:"tcp_port"`
-	HTTPPort         int    `json:"http_port"`
-	Version          string `json:"version"`
-	BroadcastAddress string `json:"broadcast_address"`
+	TCPPort  int    `json:"tcp_port"`
+	HTTPPort int    `json:"http_port"`
+	Version  string `json:"version"`
 }
 
 var byteSpace = []byte(" ")
@@ -69,9 +68,6 @@ func connectCallback(l *LTQD, hostname string) func(*LookupPeer) {
 			return
 		}
 		fmtLogf(Debug, "LOOKUPD(%v): peer info %+v", lp, lp.Info)
-		if lp.Info.BroadcastAddress == "" {
-			fmtLogf(Debug, "LOOKUPD(%v): no broadcast address", lp)
-		}
 
 		//构建注册命令, 发送命令并接收 ltqlookupd 的响应
 		var commands []*Command

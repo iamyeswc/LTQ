@@ -1,8 +1,6 @@
 package main
 
 import (
-	"bytes"
-	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -20,18 +18,16 @@ type Response struct {
 }
 
 type Producer struct {
-	RemoteAddress    string `json:"remote_address"`
-	Hostname         string `json:"hostname"`
-	BroadcastAddress string `json:"broadcast_address"`
-	TCPPort          int    `json:"tcp_port"`
-	HTTPPort         int    `json:"http_port"`
+	Hostname string `json:"hostname"`
+	TCPPort  int    `json:"tcp_port"`
+	HTTPPort int    `json:"http_port"`
 }
 
 func main() {
 	// 从 ltqlookupd 获取 Producer 信息
-	ltqlookupdAddress := "http://127.0.0.1:4161" // 替换为实际的 ltqlookupd 地址
-	topicName := "example_topic"                 // 替换为实际的 topic 名称
-	url := fmt.Sprintf("%s/clookup?topic=%s", ltqlookupdAddress, topicName)
+	ltqlookupdAddress := "http://127.0.0.1:4161"
+	topicName := "exampletopic"
+	url := fmt.Sprintf("%v/clookup?topic=%v", ltqlookupdAddress, topicName)
 
 	resp, err := http.Get(url)
 	if err != nil {
@@ -62,10 +58,10 @@ func main() {
 	fmt.Printf("Using Producer: %+v\n", producer)
 
 	// 构造 TCP 地址
-	address := fmt.Sprintf("%s:%d", producer.Hostname, producer.TCPPort)
+	address := fmt.Sprintf("%v:%d", producer.Hostname, producer.TCPPort)
 
 	// 发送 SUB 请求
-	channelName := "example_channel" // 替换为实际的 Channel 名称
+	channelName := "examplechannel" // 替换为实际的 Channel 名称
 	err = sendSUB(address, topicName, channelName)
 	if err != nil {
 		fmt.Printf("Failed to send SUB request: %v\n", err)
@@ -82,7 +78,7 @@ func sendSUB(address, topic, channel string) error {
 	defer conn.Close()
 
 	// 构造 SUB 命令
-	subCommand := fmt.Sprintf("SUB %s %s\n", topic, channel)
+	subCommand := fmt.Sprintf("SUB %v %v\n", topic, channel)
 
 	// 发送命令
 	_, err = conn.Write([]byte(subCommand))
@@ -96,6 +92,6 @@ func sendSUB(address, topic, channel string) error {
 	if err != nil {
 		return fmt.Errorf("failed to read SUB response: %v", err)
 	}
-	fmt.Printf("SUB Response: %s\n", string(response[:n]))
+	fmt.Printf("SUB Response: %v\n", string(response[:n]))
 	return nil
 }

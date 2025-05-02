@@ -1,23 +1,17 @@
 package ltqlookupd
 
 import (
-	"bytes"
-	"fmt"
 	"math/rand"
-	"net"
 	"sync"
 	"sync/atomic"
 	"time"
 )
 
 type PeerInfo struct {
-	lastUpdate       int64
-	id               string
-	RemoteAddress    string `json:"remote_address"`
-	Hostname         string `json:"hostname"`
-	BroadcastAddress string `json:"broadcast_address"`
-	TCPPort          int    `json:"tcp_port"`
-	HTTPPort         int    `json:"http_port"`
+	lastUpdate int64
+	id         string
+	Hostname   string `json:"hostname"`
+	TCPPort    int    `json:"tcp_port"`
 }
 
 // 注册信息，分类可以是topic或者channel， 下面绑定了所有对应分类的实例信息
@@ -66,6 +60,22 @@ func (r *RegistrationDB) AddProducer(k Registration, p *Producer) bool {
 
 func (r *RegistrationDB) needFilter(key string, subkey string) bool {
 	return key == "*" || subkey == "*"
+}
+
+func (r *RegistrationDB) PrintAllRegistrationDB() {
+	r.RLock()
+	defer r.RUnlock()
+
+	for reg, producerMap := range r.registrationMap {
+		fmtLogf(Debug, "Registration: Category=%v, Key=%v, SubKey=%v\n", reg.Category, reg.Key, reg.SubKey)
+		for id, producer := range producerMap {
+			if producer != nil && producer.peerInfo != nil {
+				fmtLogf(Debug, "Producer ID: %v, PeerInfo: %+v\n", id, producer.peerInfo)
+			} else {
+				fmtLogf(Debug, "Producer ID: %v, PeerInfo: nil\n", id)
+			}
+		}
+	}
 }
 
 func (r *RegistrationDB) FindRegistrations(category string, key string, subkey string) Registrations {
@@ -194,55 +204,11 @@ func (pp Producers) RandomPeerInfo() *PeerInfo {
 func (r *RegistrationDB) AddRegistrationToProducer(k Registration, p *PeerInfo) error {
 	r.Lock()
 	defer r.Unlock()
-	//在map中查找
-	producers, _ := r.registrationMap[k]
-
-	//往ltqd中增加注册信息
-	//TCP连接
-	err := ConnectToLTQD(fmt.Sprintf("%v:%d", p.Hostname, p.TCPPort), 5*time.Second, k.Key)
-	if err != nil {
-		fmtLogf(Debug, "ConnectToLTQD failed, err: %v", err)
-		delete(r.registrationMap, k)
-		return err
+	_, ok := r.registrationMap[k]
+	if !ok {
+		r.registrationMap[k] = make(map[string]*Producer)
 	}
-	//添加注册信息
-	producers[p.id] = &Producer{peerInfo: p}
 	return nil
-
-}
-
-func ConnectToLTQD(address string, timeout time.Duration, topicName string) error {
-	conn, err := net.DialTimeout("tcp", address, timeout)
-	if err != nil {
-		return fmt.Errorf("failed to connect to LTQD at %v: %v", address, err)
-	}
-	defer conn.Close()
-
-	crtCommand := buildCRTCommand(topicName)
-
-	_, err = conn.Write(crtCommand)
-	if err != nil {
-		return err
-	}
-	fmtLogf(Debug, "CRT command sent successfully")
-
-	// 读取响应
-	response := make([]byte, 1024)
-	n, err := conn.Read(response)
-	if err != nil {
-		return err
-	}
-
-	fmtLogf(Debug, "Response from LTQD: %v", string(response[:n]))
-	return nil
-}
-
-func buildCRTCommand(topic string) []byte {
-	var buf bytes.Buffer
-
-	buf.WriteString(fmt.Sprintf("CRT %v\n", topic))
-
-	return buf.Bytes()
 }
 
 // 查找所有的注册信息

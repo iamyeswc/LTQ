@@ -78,6 +78,13 @@ func New(opts *Options) (*LTQD, error) {
 		return nil, fmt.Errorf("listen (%v) failed - %v", opts.TCPAddress, err)
 	}
 
+	if opts.BroadcastTCPPort == 0 {
+		tcpAddr, ok := l.RealTCPAddr().(*net.TCPAddr)
+		if ok {
+			opts.BroadcastTCPPort = tcpAddr.Port
+		}
+	}
+
 	return l, nil
 }
 
@@ -161,7 +168,7 @@ func (l *LTQD) Main() error {
 	})
 
 	l.waitGroup.Wrap(l.queueScanLoop)
-	// l.waitGroup.Wrap(l.lookupLoop)
+	l.waitGroup.Wrap(l.lookupLoop)
 
 	err := <-exitCh
 	return err
@@ -545,4 +552,12 @@ func in(s string, lst []string) bool {
 		}
 	}
 	return false
+}
+
+func (l *LTQD) RealTCPAddr() net.Addr {
+	if l.tcpListener == nil {
+		return &net.TCPAddr{}
+	}
+	return l.tcpListener.Addr()
+
 }

@@ -3,6 +3,7 @@ package ltqd
 import (
 	"bytes"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -16,7 +17,7 @@ import (
 var separatorBytes = []byte(" ")
 var okBytes = []byte("OK")
 
-var validTopicChannelNameRegex = regexp.MustCompile(`^[.a-zA-Z0-9_-]?$`)
+var validTopicChannelNameRegex = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
 const (
 	frameTypeResponse int32 = 0
@@ -105,7 +106,10 @@ func (p *Protocol) messagePump(client *client, startedChan chan bool) {
 	var subChannel *Channel
 
 	subEventChan := client.SubEventChan
+	identifyEventChan := client.IdentifyEventChan
 	msgTimeout := client.MsgTimeout
+
+	flushed := true
 
 	close(startedChan)
 
@@ -113,15 +117,30 @@ func (p *Protocol) messagePump(client *client, startedChan chan bool) {
 		var b []byte
 		var msg *Message
 
-		// we're buffered (if there isn't any more data we should flush)...
-		// select on the flusher ticker channel, too
-		memoryMsgChan = subChannel.memoryMsgChan
-		backendMsgChan = subChannel.backendMsgChan.ReadChan()
+		if subChannel == nil {
+			memoryMsgChan = nil
+			backendMsgChan = nil
+			client.writeLock.Lock()
+			err = client.Flush()
+			client.writeLock.Unlock()
+			if err != nil {
+				fmtLogf(Debug, "PROTOCOL: [%v] messagePump error - %v", client, err)
+				return
+			}
+			flushed = true
+		} else if flushed {
+			memoryMsgChan = subChannel.memoryMsgChan
+			backendMsgChan = subChannel.backendMsgChan.ReadChan()
+		} else {
+			memoryMsgChan = subChannel.memoryMsgChan
+			backendMsgChan = subChannel.backendMsgChan.ReadChan()
+		}
 
 		select {
 		case subChannel = <-subEventChan:
-			// you can't SUB anymore
 			subEventChan = nil
+		case identifyData := <-identifyEventChan:
+			msgTimeout = identifyData.MsgTimeout
 		case b = <-backendMsgChan:
 			// decodeMessage then handle msg
 		case msg = <-memoryMsgChan:
@@ -208,6 +227,10 @@ func SendFramedResponse(w io.Writer, frameType int32, data []byte) (int, error) 
 }
 
 func (p *Protocol) Exec(client *client, params [][]byte) ([]byte, error) {
+	if bytes.Equal(params[0], []byte("IDENTIFY")) {
+		return p.IDENTIFY(client, params)
+	}
+
 	switch {
 	case bytes.Equal(params[0], []byte("FIN")):
 		return p.FIN(client, params)
@@ -217,8 +240,6 @@ func (p *Protocol) Exec(client *client, params [][]byte) ([]byte, error) {
 		return p.PUB(client, params)
 	case bytes.Equal(params[0], []byte("SUB")):
 		return p.SUB(client, params)
-	case bytes.Equal(params[0], []byte("CRT")):
-		return p.CRT(client, params)
 	}
 	return nil, fmt.Errorf("unknown command - %v", params[0])
 }
@@ -272,8 +293,7 @@ func (p *Protocol) RDY(client *client, params [][]byte) ([]byte, error) {
 	state := atomic.LoadInt32(&client.State)
 
 	if state == stateClosing {
-		// just ignore ready changes on a closing channel
-		fmtLogf(Debug, "PROTOCOL: [%v] ignoring RDY after CLS in state ClientStateV2Closing",
+		fmtLogf(Debug, "PROTOCOL: [%v] ignoring RDY after CLS in state ClientStateClosing",
 			client)
 		return nil, nil
 	}
@@ -293,6 +313,66 @@ func (p *Protocol) RDY(client *client, params [][]byte) ([]byte, error) {
 
 	if count < 0 || count > p.ltqd.getOpts().MaxRdyCount {
 		return nil, fmt.Errorf(fmt.Sprintf("RDY count %d out of range 0-%d", count, p.ltqd.getOpts().MaxRdyCount))
+	}
+
+	return nil, nil
+}
+
+func (p *Protocol) IDENTIFY(client *client, params [][]byte) ([]byte, error) {
+	var err error
+
+	if atomic.LoadInt32(&client.State) != stateInit {
+		return nil, fmt.Errorf("cannot IDENTIFY in current state")
+	}
+
+	bodyLen, err := readLen(client.Reader, client.lenSlice)
+	if err != nil {
+		return nil, fmt.Errorf("IDENTIFY failed to read body size")
+	}
+
+	if int64(bodyLen) > p.ltqd.getOpts().MaxBodySize {
+		return nil, fmt.Errorf(fmt.Sprintf("IDENTIFY body too big %d > %d", bodyLen, p.ltqd.getOpts().MaxBodySize))
+	}
+
+	if bodyLen <= 0 {
+		return nil, fmt.Errorf(fmt.Sprintf("IDENTIFY invalid body size %d", bodyLen))
+	}
+
+	body := make([]byte, bodyLen)
+	_, err = io.ReadFull(client.Reader, body)
+	if err != nil {
+		return nil, fmt.Errorf("IDENTIFY failed to read body")
+	}
+
+	var identifyData identifyData
+	err = json.Unmarshal(body, &identifyData)
+	if err != nil {
+		return nil, fmt.Errorf("IDENTIFY failed to decode JSON body")
+	}
+
+	fmtLogf(Debug, "PROTOCOL: [%v] %+v", client, identifyData)
+
+	err = client.Identify(identifyData)
+	if err != nil {
+		return nil, fmt.Errorf("IDENTIFY " + err.Error())
+	}
+
+	resp, err := json.Marshal(struct {
+		MaxRdyCount   int64 `json:"max_rdy_count"`
+		MaxMsgTimeout int64 `json:"max_msg_timeout"`
+		MsgTimeout    int64 `json:"msg_timeout"`
+	}{
+		MaxRdyCount:   p.ltqd.getOpts().MaxRdyCount,
+		MaxMsgTimeout: int64(p.ltqd.getOpts().MaxMsgTimeout / time.Millisecond),
+		MsgTimeout:    int64(client.MsgTimeout / time.Millisecond),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("IDENTIFY failed " + err.Error())
+	}
+
+	err = p.Send(client, frameTypeResponse, resp)
+	if err != nil {
+		return nil, fmt.Errorf("IDENTIFY failed " + err.Error())
 	}
 
 	return nil, nil
@@ -318,21 +398,6 @@ func (p *Protocol) FIN(client *client, params [][]byte) ([]byte, error) {
 		return nil, fmt.Errorf(fmt.Sprintf("FIN %v failed %v", *id, err.Error()))
 	}
 
-	return nil, nil
-}
-
-func (p *Protocol) CRT(client *client, params [][]byte) ([]byte, error) {
-	state := atomic.LoadInt32(&client.State)
-	if state != stateSubscribed && state != stateClosing {
-		return nil, fmt.Errorf("cannot CRT in current state")
-	}
-
-	topicName := string(params[1])
-	if !IsValidTopicName(topicName) {
-		return nil, fmt.Errorf(fmt.Sprintf("CRT topic name %q is not valid", topicName))
-	}
-
-	p.ltqd.GetTopic(topicName)
 	return nil, nil
 }
 

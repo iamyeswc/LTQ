@@ -44,6 +44,7 @@ func NewChannel(name, topicName string, ltqd *LTQD) *Channel {
 		name:          name,
 		topicName:     topicName,
 		ltqd:          ltqd,
+		clients:       make(map[int64]Consumer),
 		memoryMsgChan: make(chan *Message, ltqd.getOpts().MemQueueSize),
 	}
 

@@ -18,7 +18,7 @@ import (
 var separatorBytes = []byte(" ")
 var okBytes = []byte("OK")
 
-var validTopicChannelNameRegex = regexp.MustCompile(`^[.a-zA-Z0-9_-]?$`)
+var validTopicChannelNameRegex = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
 type Client interface {
 	Close() error
@@ -186,7 +186,7 @@ func getTopicChan(command string, params []string) (string, string, error) {
 		return "", "", fmt.Errorf(fmt.Sprintf("%v topic name '%v' is not valid", command, topicName))
 	}
 
-	if channelName != "" && IsValidChannelName(channelName) {
+	if channelName != "" && !IsValidChannelName(channelName) {
 		return "", "", fmt.Errorf(fmt.Sprintf("%v channel name '%v' is not valid", command, channelName))
 	}
 
@@ -233,17 +233,14 @@ func (p *Protocol) IDENTIFY(client *client, reader *bufio.Reader, params []strin
 	if err != nil {
 		return nil, fmt.Errorf("IDENTIFY failed to decode JSON body")
 	}
-
-	peerInfo.RemoteAddress = client.RemoteAddr().String()
-
 	// require all fields
-	if peerInfo.BroadcastAddress == "" || peerInfo.TCPPort == 0 || peerInfo.HTTPPort == 0 {
+	if peerInfo.TCPPort == 0 {
 		return nil, fmt.Errorf("IDENTIFY missing fields")
 	}
 
 	atomic.StoreInt64(&peerInfo.lastUpdate, time.Now().UnixNano())
 
-	fmtLogf(Debug, "CLIENT(%v): IDENTIFY Address:%v TCP:%d HTTP:%d", client, peerInfo.BroadcastAddress, peerInfo.TCPPort, peerInfo.HTTPPort)
+	fmtLogf(Debug, "CLIENT(%v): TCP:%d", client, peerInfo.TCPPort)
 
 	client.peerInfo = &peerInfo
 	if p.ltqlookupd.DB.AddProducer(Registration{"client", "", ""}, &Producer{peerInfo: client.peerInfo}) {
@@ -258,7 +255,6 @@ func (p *Protocol) IDENTIFY(client *client, reader *bufio.Reader, params []strin
 	if err != nil {
 		log.Fatalf("ERROR: unable to get hostname %v", err)
 	}
-	data["broadcast_address"] = p.ltqlookupd.opts.BroadcastAddress
 	data["hostname"] = hostname
 
 	response, err := json.Marshal(data)

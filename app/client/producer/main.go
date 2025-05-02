@@ -14,19 +14,21 @@ import (
 //和ltqd进行tcp交互
 
 type Producer struct {
-	RemoteAddress    string `json:"remote_address"`
-	Hostname         string `json:"hostname"`
-	BroadcastAddress string `json:"broadcast_address"`
-	TCPPort          int    `json:"tcp_port"`
-	HTTPPort         int    `json:"http_port"`
+	Hostname string `json:"hostname"`
+	TCPPort  int    `json:"tcp_port"`
+	HTTPPort int    `json:"http_port"`
+}
+
+type Response struct {
+	Producers []Producer `json:"producers"`
 }
 
 func main() {
 	// 构造请求 URL
-	ltqlookupdAddress := "http://127.0.0.1:4161" // 替换为实际的 ltqlookupd 地址
-	topicName := "example_topic"                 // 替换为实际的 topic 名称
-	fifo := "true"                               // 替换为实际的 FIFO 参数（true 或 false）
-	url := fmt.Sprintf("%s/plookup?topic=%s&fifo=%s", ltqlookupdAddress, topicName, fifo)
+	ltqlookupdAddress := "http://127.0.0.1:4161"
+	topicName := "exampletopic"
+	order := "true"
+	url := fmt.Sprintf("%v/plookup?topic=%v&order=%v", ltqlookupdAddress, topicName, order)
 
 	// 发送 GET 请求
 	resp, err := http.Get(url)
@@ -44,7 +46,8 @@ func main() {
 	}
 
 	// 打印响应
-	fmt.Printf("Response: %s\n", string(body))
+	fmt.Printf("Response: %v\n", string(body))
+
 	var response Response
 	err = json.Unmarshal(body, &response)
 	if err != nil {
@@ -52,11 +55,17 @@ func main() {
 		return
 	}
 
+	// 打印 Producer 信息
+	if len(response.Producers) == 0 {
+		fmt.Println("No producers found for the topic")
+		return
+	}
+
 	producer := response.Producers[0] // 选择第一个 Producer
 	fmt.Printf("Using Producer: %+v\n", producer)
 
 	// 构造 TCP 地址
-	address := fmt.Sprintf("%s:%d", producer.Hostname, producer.TCPPort)
+	address := fmt.Sprintf("%v:%d", producer.Hostname, producer.TCPPort)
 
 	// 发送 PUB 请求
 	err = sendPUB(address, topicName, "Hello, LTQD!")
@@ -76,7 +85,7 @@ func sendPUB(address, topic, message string) error {
 
 	// 构造 PUB 命令
 	var buf bytes.Buffer
-	buf.WriteString(fmt.Sprintf("PUB %s\n", topic)) // PUB 命令和 Topic 名称
+	buf.WriteString(fmt.Sprintf("PUB %v\n", topic)) // PUB 命令和 Topic 名称
 	messageLength := uint32(len(message))
 	lengthBytes := make([]byte, 4)
 	binary.BigEndian.PutUint32(lengthBytes, messageLength)
@@ -95,6 +104,6 @@ func sendPUB(address, topic, message string) error {
 	if err != nil {
 		return fmt.Errorf("failed to read PUB response: %v", err)
 	}
-	fmt.Printf("PUB Response: %s\n", string(response[:n]))
+	fmt.Printf("PUB Response: %v\n", string(response[:n]))
 	return nil
 }

@@ -18,7 +18,7 @@ type program struct {
 func main() {
 	prg := &program{}
 	if err := svc.Run(prg, syscall.SIGINT, syscall.SIGTERM); err != nil {
-		logFatal("%s", err)
+		logFatal("%v", err)
 	}
 }
 
@@ -51,6 +51,12 @@ func (p *program) Stop() error {
 		p.ltqlookupd.Exit()
 	})
 	return nil
+}
+
+func logDebug(f string, args ...interface{}) {
+	fmt.Printf("[ltqlookupd]: ")
+	fmt.Printf(f, args...)
+	fmt.Println()
 }
 
 func logFatal(f string, args ...interface{}) {

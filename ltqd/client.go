@@ -2,6 +2,7 @@ package ltqd
 
 import (
 	"bufio"
+	"fmt"
 	"net"
 	"sync"
 	"time"
@@ -41,18 +42,35 @@ type client struct {
 
 	lenBuf   [4]byte
 	lenSlice []byte
+
+	IdentifyEventChan chan identifyEvent
+
+	ClientID string
+	Hostname string
+	metaLock sync.RWMutex
+}
+
+type identifyData struct {
+	ClientID   string `json:"client_id"`
+	Hostname   string `json:"hostname"`
+	MsgTimeout int    `json:"msg_timeout"`
+}
+
+type identifyEvent struct {
+	MsgTimeout time.Duration
 }
 
 func newClient(id int64, conn net.Conn, ltqd *LTQD) *client {
 	c := &client{
-		ID:           id,
-		ltqd:         ltqd,
-		Conn:         conn,
-		Reader:       bufio.NewReaderSize(conn, defaultBufferSize),
-		Writer:       bufio.NewWriterSize(conn, defaultBufferSize),
-		SubEventChan: make(chan *Channel, 1),
-		ExitChan:     make(chan int, 1),
-		MsgTimeout:   ltqd.getOpts().MsgTimeout,
+		ID:                id,
+		ltqd:              ltqd,
+		Conn:              conn,
+		Reader:            bufio.NewReaderSize(conn, defaultBufferSize),
+		Writer:            bufio.NewWriterSize(conn, defaultBufferSize),
+		SubEventChan:      make(chan *Channel, 1),
+		ExitChan:          make(chan int, 1),
+		MsgTimeout:        ltqd.getOpts().MsgTimeout,
+		IdentifyEventChan: make(chan identifyEvent, 1),
 	}
 	c.lenSlice = c.lenBuf[:]
 	return c
@@ -63,6 +81,48 @@ func (c *client) Flush() error {
 	err := c.Writer.Flush()
 	if err != nil {
 		return err
+	}
+
+	return nil
+}
+
+func (c *client) Identify(data identifyData) error {
+	var err error
+	fmtLogf(Debug, "[%v] IDENTIFY: %+v", c, data)
+
+	c.metaLock.Lock()
+	c.ClientID = data.ClientID
+	c.Hostname = data.Hostname
+	c.metaLock.Unlock()
+
+	err = c.SetMsgTimeout(data.MsgTimeout)
+	if err != nil {
+		return err
+	}
+
+	ie := identifyEvent{
+		MsgTimeout: c.MsgTimeout,
+	}
+
+	select {
+	case c.IdentifyEventChan <- ie:
+	default:
+	}
+
+	return nil
+}
+
+func (c *client) SetMsgTimeout(msgTimeout int) error {
+	c.writeLock.Lock()
+	defer c.writeLock.Unlock()
+
+	switch {
+	case msgTimeout == 0:
+	case msgTimeout >= 1000 &&
+		msgTimeout <= int(c.ltqd.getOpts().MaxMsgTimeout/time.Millisecond):
+		c.MsgTimeout = time.Duration(msgTimeout) * time.Millisecond
+	default:
+		return fmt.Errorf("msg timeout (%d) is invalid", msgTimeout)
 	}
 
 	return nil
