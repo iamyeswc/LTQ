@@ -422,10 +422,10 @@ func (l *LTQD) Exit() {
 	}
 
 	l.Lock()
-	// err := l.PersistMetadata()
-	// if err != nil {
-	// 	fmtLogf(Debug, "failed to persist metadata - %v", err)
-	// }
+	err := l.PersistMetadata()
+	if err != nil {
+		fmtLogf(Debug, "failed to persist metadata - %v", err)
+	}
 	fmtLogf(Debug, "LTQ: closing topics")
 	for _, topic := range l.topics {
 		topic.Close()
