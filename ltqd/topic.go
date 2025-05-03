@@ -125,20 +125,6 @@ func (t *Topic) getOrCreateChannel(name string) (*Channel, bool) {
 	return channel, false
 }
 
-// // GetExistingChannel
-// // - 保证channel存在的前提下 获取channel的方法
-// // - 相比于GetChannel不存在create channel的行为 通过sync.RWMutex提高并发性能和效率
-// func GetExistingChannel() {
-
-// }
-
-// // DeleteExistingChannel
-// // - 保证channel存在的前提下 从当前topic下删除channel
-// // - 通过channelUpdateChan，在删除channel时与messagePump做消息传递 messagePump需要重新获取所有的channel
-// func DeleteExistingChannel() {
-
-// }
-
 // messagePump
 // - 当前topic的消息处理函数
 // - 不断select接收来自in-memory queue和backend queue的消息 并复制到当前topic的每个channel
