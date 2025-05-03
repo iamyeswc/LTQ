@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -48,6 +49,9 @@ type client struct {
 	ClientID string
 	Hostname string
 	metaLock sync.RWMutex
+
+	ReadyStateChan chan int
+	ReadyCount     int64
 }
 
 type identifyData struct {
@@ -71,6 +75,7 @@ func newClient(id int64, conn net.Conn, ltqd *LTQD) *client {
 		ExitChan:          make(chan int, 1),
 		MsgTimeout:        ltqd.getOpts().MsgTimeout,
 		IdentifyEventChan: make(chan identifyEvent, 1),
+		ReadyStateChan:    make(chan int, 1),
 	}
 	c.lenSlice = c.lenBuf[:]
 	return c
@@ -126,4 +131,28 @@ func (c *client) SetMsgTimeout(msgTimeout int) error {
 	}
 
 	return nil
+}
+
+func (c *client) SetReadyCount(count int64) {
+	oldCount := atomic.SwapInt64(&c.ReadyCount, count)
+
+	if oldCount != count {
+		c.tryUpdateReadyState()
+	}
+}
+
+func (c *client) tryUpdateReadyState() {
+	select {
+	case c.ReadyStateChan <- 1:
+	default:
+	}
+}
+
+func (c *client) IsReadyForMessages() bool {
+
+	readyCount := atomic.LoadInt64(&c.ReadyCount)
+
+	fmtLogf(Debug, "state rdy: %d", readyCount)
+
+	return readyCount > 0
 }

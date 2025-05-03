@@ -26,8 +26,7 @@ type Options struct {
 	MaxMsgSize int64         `flag:"max-msg-size"`
 	MsgTimeout time.Duration `flag:"msg-timeout"`
 
-	MaxRdyCount   int64         `flag:"max-rdy-count"`
-	MaxReqTimeout time.Duration `flag:"max-req-timeout"`
+	MaxRdyCount int64 `flag:"max-rdy-count"`
 
 	QueueScanSelectionCount  int           `flag:"queue-scan-selection-count"`
 	QueueScanInterval        time.Duration `flag:"queue-scan-interval"`
@@ -64,14 +63,13 @@ func NewOptions() *Options {
 		MaxMsgSize: 1024 * 1024,
 		MsgTimeout: 5 * time.Second,
 
-		MaxRdyCount:   10000,
-		MaxReqTimeout: 5 * time.Second,
+		MaxRdyCount: 10000,
 
-		QueueScanSelectionCount:  100,
+		QueueScanSelectionCount:  20,
 		QueueScanInterval:        1 * time.Second,
 		QueueScanRefreshInterval: 5 * time.Second,
 		QueueScanDirtyPercent:    0.25,
-		QueueScanWorkerPoolMax:   10,
+		QueueScanWorkerPoolMax:   4,
 
 		LTQLookupdTCPAddresses: []string{"0.0.0.0:4160"},
 		MaxBodySize:            5 * 1024 * 1024,

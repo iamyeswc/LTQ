@@ -78,6 +78,7 @@ func (c *Channel) Exiting() bool {
 }
 
 func (c *Channel) PutMessage(m *Message) error {
+	fmtLogf(Debug, "channel putmessage, name:%s, msg:%s", c.name, string(m.Body))
 	c.exitMutex.RLock()
 	defer c.exitMutex.RUnlock()
 	if c.Exiting() {
@@ -93,13 +94,10 @@ func (c *Channel) PutMessage(m *Message) error {
 
 func (c *Channel) put(m *Message) error {
 	//把消息放到内存
-	if cap(c.memoryMsgChan) > 0 {
-		select {
-		case c.memoryMsgChan <- m:
-			return nil
-		default:
-			break
-		}
+	select {
+	case c.memoryMsgChan <- m:
+		return nil
+	default:
 	}
 
 	//如果内存满了，放到后端
@@ -183,12 +181,8 @@ func (c *Channel) RemoveClient(clientID int64) {
 
 	c.Lock()
 	delete(c.clients, clientID)
-	numClients := len(c.clients)
 	c.Unlock()
 
-	if numClients == 0 {
-		//如果没有客户端了，关闭channel
-	}
 }
 
 // 客户端消费完，把消息从inFlightMessages里删除

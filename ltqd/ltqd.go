@@ -295,20 +295,20 @@ func (l *LTQD) lookupLoop() {
 		case <-ticker.C:
 			// send a heartbeat and read a response (read detects closed conns)
 			for _, lookupPeer := range lookupPeers {
-				fmtLogf(Debug, "LOOKUPD(%v): sending heartbeat", lookupPeer)
+				// fmtLogf(Debug, "LOOKUPD(%v): sending heartbeat", lookupPeer)
 				cmd := Ping()
 				_, err := lookupPeer.Command(cmd)
 				if err != nil {
-					fmtLogf(Debug, "LOOKUPD(%v): %v - %v", lookupPeer, cmd, err)
+					// fmtLogf(Debug, "LOOKUPD(%v): %v - %v", lookupPeer, cmd, err)
 				}
 			}
 		case val := <-l.notifyChan:
 			var cmd *Command
-			var branch string
+			// var branch string
 
 			switch val := val.(type) {
 			case *Channel:
-				branch = "channel"
+				// branch = "channel"
 				channel := val
 				if channel.Exiting() {
 					cmd = UnRegister(channel.topicName, channel.name)
@@ -316,7 +316,7 @@ func (l *LTQD) lookupLoop() {
 					cmd = Register(channel.topicName, channel.name)
 				}
 			case *Topic:
-				branch = "topic"
+				// branch = "topic"
 				topic := val
 				if topic.Exiting() {
 					cmd = UnRegister(topic.name, "")
@@ -326,10 +326,10 @@ func (l *LTQD) lookupLoop() {
 			}
 
 			for _, lookupPeer := range lookupPeers {
-				fmtLogf(Debug, "LOOKUPD(%v): %v %v", lookupPeer, branch, cmd)
+				// fmtLogf(Debug, "LOOKUPD(%v): %v %v", lookupPeer, branch, cmd)
 				_, err := lookupPeer.Command(cmd)
 				if err != nil {
-					fmtLogf(Debug, "LOOKUPD(%v): %v - %v", lookupPeer, cmd, err)
+					// fmtLogf(Debug, "LOOKUPD(%v): %v - %v", lookupPeer, cmd, err)
 				}
 			}
 		case <-l.exitChan:
@@ -422,10 +422,10 @@ func (l *LTQD) Exit() {
 	}
 
 	l.Lock()
-	err := l.PersistMetadata()
-	if err != nil {
-		fmtLogf(Debug, "failed to persist metadata - %v", err)
-	}
+	// err := l.PersistMetadata()
+	// if err != nil {
+	// 	fmtLogf(Debug, "failed to persist metadata - %v", err)
+	// }
 	fmtLogf(Debug, "LTQ: closing topics")
 	for _, topic := range l.topics {
 		topic.Close()

@@ -52,10 +52,10 @@ func connectCallback(l *LTQD, hostname string) func(*LookupPeer) {
 
 		resp, err := lp.Command(cmd)
 		if err != nil {
-			fmtLogf(Debug, "LOOKUPD(%v): %v - %v", lp, cmd, err)
+			// fmtLogf(Debug, "LOOKUPD(%v): %v - %v", lp, cmd, err)
 			return
 		} else if bytes.Equal(resp, []byte("E_INVALID")) {
-			fmtLogf(Debug, "LOOKUPD(%v): lookupd returned %v", lp, resp)
+			// fmtLogf(Debug, "LOOKUPD(%v): lookupd returned %v", lp, resp)
 			lp.Close()
 			return
 		}
@@ -63,11 +63,11 @@ func connectCallback(l *LTQD, hostname string) func(*LookupPeer) {
 		//把返回内容解析到 peerInfo 结构体中
 		err = json.Unmarshal(resp, &lp.Info)
 		if err != nil {
-			fmtLogf(Debug, "LOOKUPD(%v): parsing response - %v", lp, resp)
+			// fmtLogf(Debug, "LOOKUPD(%v): parsing response - %v", lp, resp)
 			lp.Close()
 			return
 		}
-		fmtLogf(Debug, "LOOKUPD(%v): peer info %+v", lp, lp.Info)
+		// fmtLogf(Debug, "LOOKUPD(%v): peer info %+v", lp, lp.Info)
 
 		//构建注册命令, 发送命令并接收 ltqlookupd 的响应
 		var commands []*Command
@@ -86,10 +86,10 @@ func connectCallback(l *LTQD, hostname string) func(*LookupPeer) {
 		l.RUnlock()
 
 		for _, cmd := range commands {
-			fmtLogf(Debug, "LOOKUPD(%v): %v", lp, cmd)
+			// fmtLogf(Debug, "LOOKUPD(%v): %v", lp, cmd)
 			_, err := lp.Command(cmd)
 			if err != nil {
-				fmtLogf(Debug, "LOOKUPD(%v): %v - %v", lp, cmd, err)
+				// fmtLogf(Debug, "LOOKUPD(%v): %v - %v", lp, cmd, err)
 				return
 			}
 		}
