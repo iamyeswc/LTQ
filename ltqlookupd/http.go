@@ -59,13 +59,17 @@ func (s *httpServer) cLookup(w http.ResponseWriter, req *http.Request, ps httpro
 	if err != nil {
 		return nil, Err{400, "MISSING_ARG_TOPIC"}
 	}
+	channelName, err := reqParams.Get("channel")
+	if err != nil {
+		return nil, Err{400, "MISSING_ARG_CHANNEL"}
+	}
 
 	registration := s.ltqlookupd.DB.FindRegistrations("topic", topicName, "")
 	if len(registration) == 0 {
 		return nil, Err{404, "TOPIC_NOT_FOUND"}
 	}
 
-	channels := s.ltqlookupd.DB.FindRegistrations("channel", topicName, "*").SubKeys()
+	channels := s.ltqlookupd.DB.FindRegistrations("channel", topicName, channelName).SubKeys()
 	producers := s.ltqlookupd.DB.FindProducers("topic", topicName, "")
 	producers = producers.FilterByActive(s.ltqlookupd.opts.InactiveProducerTimeout)
 	return map[string]interface{}{
@@ -119,6 +123,7 @@ func (s *httpServer) pLookup(w http.ResponseWriter, req *http.Request, ps httpro
 				producerClients := s.ltqlookupd.DB.FindProducers("client", "", "")
 				producers = producerClients.FilterByActive(s.ltqlookupd.opts.InactiveProducerTimeout)
 			}
+			fmtLogf(Debug, "after producers len: %v", len(producers))
 			//随机选择一个实例
 			producer := producers.RandomPeerInfo()
 			fmtLogf(Debug, "producer: %v", producer.Hostname)

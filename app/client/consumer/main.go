@@ -50,7 +50,8 @@ func main() {
 	// 从 ltqlookupd 获取 Producer 信息
 	ltqlookupdAddress := "http://127.0.0.1:4161"
 	topicName := "exampletopic"
-	url := fmt.Sprintf("%v/clookup?topic=%v", ltqlookupdAddress, topicName)
+	channelName := "examplechannel"
+	url := fmt.Sprintf("%v/clookup?topic=%v&channel=%v", ltqlookupdAddress, topicName, channelName)
 
 	resp, err := http.Get(url)
 	if err != nil {
@@ -92,7 +93,7 @@ func main() {
 
 	// 发送 IDNETIFY 请求
 	identify := identifyData{
-		ClientID:   "12345",
+		ClientID:   "benchmark_consumer",
 		Hostname:   producer.Hostname,
 		MsgTimeout: 60000, //1 minute
 	}
@@ -103,7 +104,6 @@ func main() {
 	}
 
 	// 发送 SUB 请求
-	channelName := "examplechannel"
 	err = sendSUB(conn, topicName, channelName)
 	if err != nil {
 		fmt.Printf("Failed to send SUB request: %v\n", err)
