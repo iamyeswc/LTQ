@@ -52,28 +52,35 @@ const (
 	topicName         = "exampletopic"
 	messageCount      = 1000
 	numProducers      = 10
-	numConsumers      = 10
+	numConsumers      = 1
 )
 
 func main() {
 	var wg sync.WaitGroup
-	startTime := time.Now()
-
-	// 启动消费者
-	for i := 0; i < numConsumers; i++ {
-		wg.Add(1)
-		go func(cusumerID int) {
-			defer wg.Done()
-			consumer(fmt.Sprintf("consumer-%d", cusumerID))
-		}(i)
-	}
-
 	// 启动生产者
 	for i := 0; i < numProducers; i++ {
 		wg.Add(1)
 		go func(producerID int) {
 			defer wg.Done()
 			producer(producerID)
+		}(i)
+	}
+	wg.Wait()
+	fmt.Println("All producers finished sending messages.")
+
+	getTime()
+	fmt.Println("All consumers finished receiving messages.")
+}
+
+func getTime() {
+	var wg sync.WaitGroup
+	startTime := time.Now()
+	// 启动消费者
+	for i := 0; i < numConsumers; i++ {
+		wg.Add(1)
+		go func(cusumerID int) {
+			defer wg.Done()
+			consumer(fmt.Sprintf("consumer-%d", cusumerID))
 		}(i)
 	}
 

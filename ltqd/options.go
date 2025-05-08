@@ -66,7 +66,7 @@ func NewOptions() *Options {
 		MaxRdyCount: 10000,
 
 		QueueScanSelectionCount:  20,
-		QueueScanInterval:        1 * time.Second,
+		QueueScanInterval:        100 * time.Millisecond,
 		QueueScanRefreshInterval: 5 * time.Second,
 		QueueScanDirtyPercent:    0.25,
 		QueueScanWorkerPoolMax:   4,
