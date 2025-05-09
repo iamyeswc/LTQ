@@ -73,11 +73,7 @@ func NewTopic(name string, ltqd *LTQD) *Topic {
 // - 控制topic的开启 开始接收消息(控制messagePump的开启)
 // - 通过一个startChan来做goroutine之间的消息传递
 func (t *Topic) Start() {
-	select {
-	case t.startChan <- 1:
-		// fmtLogf(Debug, "topic start channel!!!!!!!")
-	default:
-	}
+	t.startChan <- 1
 }
 
 // Exiting
