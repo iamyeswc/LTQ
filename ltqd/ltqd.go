@@ -109,7 +109,7 @@ func (l *LTQD) GetTopic(name string) *Topic {
 	t = NewTopic(name, l)
 	l.topics[name] = t
 	l.Unlock()
-	fmtLogf(Debug, "TOPIC(%v): created", t.name)
+	// fmtLogf(Debug, "TOPIC(%v): created", t.name)
 	//当创建了topic后需要给topic startChan发送标志，开始messagePump
 
 	//如果正在loading中，则不需要启动messagePump

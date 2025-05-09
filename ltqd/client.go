@@ -152,7 +152,7 @@ func (c *client) IsReadyForMessages() bool {
 
 	readyCount := atomic.LoadInt64(&c.ReadyCount)
 
-	fmtLogf(Debug, "state rdy: %d", readyCount)
+	// fmtLogf(Debug, "state rdy: %d", readyCount)
 
 	return readyCount > 0
 }

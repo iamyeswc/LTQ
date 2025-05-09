@@ -8,23 +8,19 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"sync"
 	"time"
 )
+
+// Response 和 Producer 结构体定义
+type Response struct {
+	Channels  []string   `json:"channels"`
+	Producers []Producer `json:"producers"`
+}
 
 type Producer struct {
 	Hostname string `json:"hostname"`
 	TCPPort  int    `json:"tcp_port"`
 	HTTPPort int    `json:"http_port"`
-}
-
-type Responsep struct {
-	Producers []Producer `json:"producers"`
-}
-
-type Response struct {
-	Channels  []string   `json:"channels"`
-	Producers []Producer `json:"producers"`
 }
 
 type identifyData struct {
@@ -47,137 +43,17 @@ type Message struct {
 	ID        MessageID
 }
 
-const (
-	ltqlookupdAddress = "http://127.0.0.1:4161"
-	topicName         = "exampletopic"
-	messageCount      = 1000
-	numProducers      = 10
-	numConsumers      = 1
-)
-
 func main() {
-	var wg sync.WaitGroup
-	// 启动生产者
-	for i := 0; i < numProducers; i++ {
-		wg.Add(1)
-		go func(producerID int) {
-			defer wg.Done()
-			producer(producerID)
-		}(i)
-	}
-	wg.Wait()
-	fmt.Println("All producers finished sending messages.")
-
-	getTime()
-	fmt.Println("All consumers finished receiving messages.")
-}
-
-func getTime() {
-	var wg sync.WaitGroup
-	startTime := time.Now()
 	// 启动消费者
-	for i := 0; i < numConsumers; i++ {
-		wg.Add(1)
-		go func(cusumerID int) {
-			defer wg.Done()
-			consumer(fmt.Sprintf("consumer-%d", cusumerID))
-		}(i)
+	startTime := time.Now()
+	for i := 0; i < 1000; i++ {
+		consumer()
 	}
-
-	wg.Wait()
-	duration := time.Since(startTime)
-	fmt.Printf("Total time taken: %v\n", duration)
-	fmt.Printf("Throughput: %.2f messages/sec\n", float64(numProducers*messageCount)/duration.Seconds())
+	endTime := time.Now()
+	fmt.Printf("All consumers finished receiving messages in %v seconds.\n", endTime.Sub(startTime).Seconds())
 }
 
-func producer(producerID int) {
-	// 构造请求 URL
-	ltqlookupdAddress := "http://127.0.0.1:4161"
-	topicName := "exampletopic"
-	order := "true"
-	url := fmt.Sprintf("%v/plookup?topic=%v&order=%v", ltqlookupdAddress, topicName, order)
-
-	// 发送 GET 请求
-	resp, err := http.Get(url)
-	if err != nil {
-		fmt.Printf("Failed to send request: %v\n", err)
-		return
-	}
-	defer resp.Body.Close()
-
-	// 读取响应
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		fmt.Printf("Failed to read response: %v\n", err)
-		return
-	}
-
-	// 打印响应
-	fmt.Printf("Response: %v\n", string(body))
-
-	var response Responsep
-	err = json.Unmarshal(body, &response)
-	if err != nil {
-		fmt.Printf("Failed to parse JSON response: %v\n", err)
-		return
-	}
-
-	// 打印 Producer 信息
-	if len(response.Producers) == 0 {
-		fmt.Println("No producers found for the topic")
-		return
-	}
-
-	producer := response.Producers[0] // 选择第一个 Producer
-	fmt.Printf("Using Producer: %+v\n", producer)
-
-	// 构造 TCP 地址
-	address := fmt.Sprintf("%v:%d", producer.Hostname, producer.TCPPort)
-
-	// 发送 PUB 请求
-	for i := 0; i < messageCount; i++ {
-		message := fmt.Sprintf("Message from producer %d: %d", producerID, i)
-		err := sendPUB(address, topicName, message)
-		if err != nil {
-			fmt.Printf("Producer %d failed to send message %d: %v\n", producerID, i, err)
-		}
-	}
-}
-
-// 发送 PUB 请求
-func sendPUB(address, topic, message string) error {
-	conn, err := net.Dial("tcp", address)
-	if err != nil {
-		return fmt.Errorf("failed to connect to LTQD: %v", err)
-	}
-	defer conn.Close()
-
-	// 构造 PUB 命令
-	var buf bytes.Buffer
-	buf.WriteString(fmt.Sprintf("PUB %v\n", topic)) // PUB 命令和 Topic 名称
-	messageLength := uint32(len(message))
-	lengthBytes := make([]byte, 4)
-	binary.BigEndian.PutUint32(lengthBytes, messageLength)
-	buf.Write(lengthBytes)   // 消息长度
-	buf.WriteString(message) // 消息内容
-
-	// 发送命令
-	_, err = conn.Write(buf.Bytes())
-	if err != nil {
-		return fmt.Errorf("failed to send PUB command: %v", err)
-	}
-
-	// 读取响应
-	response := make([]byte, 1024)
-	n, err := conn.Read(response)
-	if err != nil {
-		return fmt.Errorf("failed to read PUB response: %v", err)
-	}
-	fmt.Printf("PUB Response: %v\n", string(response[:n]))
-	return nil
-}
-
-func consumer(cusumerid string) {
+func consumer() {
 	// 从 ltqlookupd 获取 Producer 信息
 	ltqlookupdAddress := "http://127.0.0.1:4161"
 	topicName := "exampletopic"
@@ -221,10 +97,11 @@ func consumer(cusumerid string) {
 		return
 	}
 	defer conn.Close()
+	conn.SetDeadline(time.Now().Add(5 * time.Second))
 
 	// 发送 IDNETIFY 请求
 	identify := identifyData{
-		ClientID:   cusumerid,
+		ClientID:   "benchmark_consumer",
 		Hostname:   producer.Hostname,
 		MsgTimeout: 60000, //1 minute
 	}

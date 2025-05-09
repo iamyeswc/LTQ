@@ -75,7 +75,7 @@ func NewTopic(name string, ltqd *LTQD) *Topic {
 func (t *Topic) Start() {
 	select {
 	case t.startChan <- 1:
-		fmtLogf(Debug, "topic start channel!!!!!!!")
+		// fmtLogf(Debug, "topic start channel!!!!!!!")
 	default:
 	}
 }
@@ -94,18 +94,18 @@ func (t *Topic) Exiting() bool {
 // - 加锁保证GetChannel操作的线程安全 防止并发产生错误
 // 用于客户端与ltqd连接的时候，如果需要有客户端订阅对应topic下的channel，拿到对应的channel，把客户端加进去
 func (t *Topic) GetChannel(name string) *Channel {
-	fmtLogf(Debug, "get channel ===> name:%s", name)
+	// fmtLogf(Debug, "get channel ===> name:%s", name)
 	t.Lock()
 	channel, isNew := t.getOrCreateChannel(name)
 	t.Unlock()
 
-	fmtLogf(Debug, "get channel ===> isnew:%v", isNew)
+	// fmtLogf(Debug, "get channel ===> isnew:%v", isNew)
 
 	if isNew {
 		//新创建的channel, 需要通知topic的messagepumb更新所有list的channel
 		select {
 		case t.channelUpdateChan <- 1:
-			fmtLogf(Debug, "get channel ===> channelUpdateChan")
+			// fmtLogf(Debug, "get channel ===> channelUpdateChan")
 		case <-t.exitChan:
 		}
 	}
@@ -119,7 +119,7 @@ func (t *Topic) getOrCreateChannel(name string) (*Channel, bool) {
 		//找不到channel就创建一个
 		channel = NewChannel(name, t.name, t.ltqd)
 		t.channels[name] = channel
-		fmtLogf(Debug, "TOPIC(%v): new channel(%v)", t.name, channel.name)
+		// fmtLogf(Debug, "TOPIC(%v): new channel(%v)", t.name, channel.name)
 		return channel, true
 	}
 	return channel, false
@@ -135,21 +135,21 @@ func (t *Topic) messagePump() {
 	var chans []*Channel
 	var memoryMsgChan chan *Message
 	var backendMsgChan <-chan []byte
-	fmtLogf(Debug, " start topic messagepump====> for")
+	// fmtLogf(Debug, " start topic messagepump====> for")
 	for {
 		select {
 		case <-t.channelUpdateChan: //这时候更新channel 不用进入主循环
-			fmtLogf(Debug, "topic messagepump====> channelUpdateChan")
+			// fmtLogf(Debug, "topic messagepump====> channelUpdateChan")
 			continue
 		case <-t.exitChan:
 			fmtLogf(Debug, "TOPIC(%v): closing ... messagePump", t.name)
 			return
 		case <-t.startChan:
-			fmtLogf(Debug, "topic messagepump====> startchan")
+			// fmtLogf(Debug, "topic messagepump====> startchan")
 		}
 		break
 	}
-	fmtLogf(Debug, "end topic messagepump====> for")
+	// fmtLogf(Debug, "end topic messagepump====> for")
 
 	//开始后获取所有channels
 	t.RLock()
@@ -157,36 +157,36 @@ func (t *Topic) messagePump() {
 		chans = append(chans, c)
 	}
 	t.RUnlock()
-	fmtLogf(Debug, "topic messagepump====> chans:%v", chans)
+	// fmtLogf(Debug, "topic messagepump====> chans:%v", chans)
 
 	if len(chans) > 0 {
 		memoryMsgChan = t.memoryMsgChan
 		backendMsgChan = t.backendMsgChan.ReadChan()
-		fmtLogf(Debug, "topic messagepump====> len chans:%d", len(chans))
+		// fmtLogf(Debug, "topic messagepump====> len chans:%d", len(chans))
 	}
 
 	//主循环
 	for {
-		fmtLogf(Debug, "topic messagepump====> for2")
+		// fmtLogf(Debug, "topic messagepump====> for2")
 		select {
 		case msg = <-memoryMsgChan:
-			fmtLogf(Debug, "topic message pump memoryMsgChan====")
+			// fmtLogf(Debug, "topic message pump memoryMsgChan====")
 		case buf = <-backendMsgChan:
 			msg, err = decodeMessage(buf)
 			if err != nil {
 				fmtLogf(Debug, "TOPIC(%v): failed to decode message - %v", t.name, err)
 				continue
 			}
-			fmtLogf(Debug, "topic message pump backendMsgChan====")
+			// fmtLogf(Debug, "topic message pump backendMsgChan====")
 		case <-t.channelUpdateChan:
-			fmtLogf(Debug, "channelUpdateChan=====")
+			// fmtLogf(Debug, "channelUpdateChan=====")
 			//移除之前所有的chans，更新到最新
 			chans = chans[:0]
 			t.RLock()
 			for _, c := range t.channels {
 				chans = append(chans, c)
 			}
-			fmtLogf(Debug, "chan len ===== %d", len(chans))
+			// fmtLogf(Debug, "chan len ===== %d", len(chans))
 			t.RUnlock()
 			if len(chans) == 0 {
 				memoryMsgChan = nil
@@ -202,7 +202,7 @@ func (t *Topic) messagePump() {
 		}
 
 		for i, channel := range chans {
-			fmtLogf(Debug, "cp to chan %s", channel.name)
+			// fmtLogf(Debug, "cp to chan %s", channel.name)
 			chanMsg := msg
 			// 复制消息，因为每个 channel 都需要一个独立的实例，但如果是第一个 channel，可以避免复制（fastpath）
 			if i > 0 {
@@ -218,7 +218,7 @@ func (t *Topic) messagePump() {
 }
 
 func (t *Topic) PutMessage(m *Message) error {
-	fmtLogf(Debug, "topic put message, topic:%s", t.name)
+	// fmtLogf(Debug, "topic put message, topic:%s", t.name)
 	//放一个消息
 	t.RLock()
 	defer t.RUnlock()
@@ -264,14 +264,14 @@ func (t *Topic) put(m *Message) error {
 	if cap(t.memoryMsgChan) > 0 {
 		select {
 		case t.memoryMsgChan <- m:
-			fmtLogf(Debug, "topic put===")
+			// fmtLogf(Debug, "topic put===")
 			return nil
 		default:
 			break
 		}
 	}
 
-	fmtLogf(Debug, "topic put to backend===")
+	// fmtLogf(Debug, "topic put to backend===")
 	//如果内存满了，放到后端
 	err := writeMessageToBackend(m, t.backendMsgChan)
 	t.ltqd.SetHealth(err)

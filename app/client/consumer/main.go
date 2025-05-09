@@ -260,7 +260,7 @@ func sendFIN(conn net.Conn, id []byte) error {
 	// 读取响应
 	response := make([]byte, 1024)
 	conn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
-	n, err := conn.Read(response)
+	_, err = conn.Read(response)
 	if err != nil {
 		if ne, ok := err.(net.Error); ok && ne.Timeout() {
 			// 超时但不是错误，说明没返回内容，正常
@@ -268,6 +268,6 @@ func sendFIN(conn net.Conn, id []byte) error {
 		}
 		return fmt.Errorf("read error: %v", err)
 	}
-	fmt.Printf("Response: %s\n", string(response[:n]))
+	// fmt.Printf("Response: %s\n", string(response[:n]))
 	return nil
 }
