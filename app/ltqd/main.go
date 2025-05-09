@@ -2,7 +2,10 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"ltq/ltqd"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"sync"
 	"syscall"
@@ -42,6 +45,9 @@ func (p *program) Start() error {
 	if err != nil {
 		logFatal("failed to persist metadata - %v", err)
 	}
+	go func() {
+		log.Println(http.ListenAndServe("localhost:6060", nil))
+	}()
 
 	go func() {
 		err := p.ltqd.Main()
